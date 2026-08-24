@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
+import { generateMasterQuoteReport }
+from "@/lib/ai/procurement/masterQuoteReport";
 
 function normalize(value: string = "") {
 
@@ -58,8 +60,15 @@ for (const doc of quoteSnapshot.docs) {
     break;
   }
 }
+if (!vendorQuote) {
+  return NextResponse.json({
+    success: false,
+    message: "Quote not found",
+  });
+}
+
 const parentQuoteId =
-  vendorQuote.QuoteInfo?.[0]?.ParentQuoteID;
+  vendorQuote?.QuoteInfo?.[0]?.ParentQuoteID;
 
 const vendorType =
   vendorQuote?.QuoteInfo?.[0]?.QuoteType;
@@ -112,6 +121,112 @@ const masterLines =
 
 const vendorLines =
   vendorInfo?.Qlines || [];
+// ------------------------------------
+// Build Procurement Analysis Quotes
+// ------------------------------------
+
+const analysisQuotes: any[] = [];
+
+const masterQuoteId =
+  quoteData?.QuoteInfo?.[0]?.QuoteId;
+
+// Always include the master quote
+analysisQuotes.push(quoteData);
+
+// Add every vendor quote belonging to this master
+quoteSnapshot.docs.forEach((doc) => {
+
+  const data = doc.data();
+
+  const info = data?.QuoteInfo?.[0];
+
+  if (!info) return;
+
+  if (info.ParentQuoteID === masterQuoteId) {
+
+    analysisQuotes.push(data);
+
+  }
+
+});
+
+console.log(
+  "===================================="
+);
+
+console.log(
+  "SELECTED QUOTE:",
+  vendorInfo?.QuoteNumber
+);
+
+console.log(
+  "SELECTED QUOTE TYPE:",
+  vendorType
+);
+
+console.log(
+  "MASTER QUOTE:",
+  masterInfo?.QuoteNumber
+);
+
+console.log(
+  "MASTER QUOTE ID:",
+  masterQuoteId
+);
+
+console.log(
+  "VENDOR QUOTES FOUND:",
+  analysisQuotes
+    .filter(
+      (q: any) =>
+        q?.QuoteInfo?.[0]?.QuoteType !==
+        "Master"
+    )
+    .map(
+      (q: any) => ({
+        quoteNumber:
+          q?.QuoteInfo?.[0]?.QuoteNumber,
+
+        vendor:
+          q?.QuoteInfo?.[0]?.VendorName,
+
+        quoteId:
+          q?.QuoteInfo?.[0]?.QuoteId,
+
+        parentQuoteId:
+          q?.QuoteInfo?.[0]?.ParentQuoteID,
+
+        productCount:
+          q?.QuoteInfo?.[0]?.Qlines?.length
+      })
+    )
+);
+
+console.log(
+  "TOTAL ANALYSIS QUOTES:",
+  analysisQuotes.length
+);
+
+console.log(
+  "===================================="
+);
+// Master Quote → compare against ALL vendors
+let procurement: any;
+procurement =
+ generateMasterQuoteReport(
+  analysisQuotes,
+  vendorQuote
+);
+
+console.log(
+  "PROCUREMENT ANALYSIS",
+  procurement
+);
+
+return NextResponse.json({
+  success: true,
+  report: procurement
+});
 
 const missingProducts = masterLines.filter((master: any) => {
 

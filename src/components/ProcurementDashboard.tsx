@@ -53,7 +53,7 @@ export default function ProcurementDashboard({
   );
 
   doc.text(
-    `Total Amount: $${reportData.totalAmount}`,
+    `Total Amount: $ ${reportData.totalAmount}`,
     14,
     65
   );
@@ -67,7 +67,7 @@ doc.text(
 );
 
 doc.text(
-  `Pricing Compliance: ${reportData.priceMatchPercentage}%`,
+  `Pricing Compliance: ${reportData.overallPriceMatchPercentage}%`,
   14,
   110
 );
@@ -110,7 +110,7 @@ doc.text(
 );
 
 doc.text(
-  `• ${reportData.priceMatchPercentage}% pricing compliance achieved`,
+  `• ${reportData.overallPriceMatchPercentage}% pricing compliance achieved`,
   14,
   165
 );
@@ -129,7 +129,7 @@ doc.text(
     head: [["Metric", "Value"]],
     body: [
       ["Qty Match %", reportData.qtyMatchPercentage],
-      ["Price Match %", reportData.priceMatchPercentage],
+      ["Price Match %", reportData.overallPriceMatchPercentage],
       ["Missing Products", reportData.missingProductCount || 0],
       ["Extra Products", reportData.extraProductCount || 0],
       [
@@ -217,9 +217,11 @@ doc.text(
         </div>
 
         <div className="bg-green-800 p-5 rounded-xl">
-          <h3>Total Amount</h3>
+         <h3>Best Combined Cost</h3>
           <p className="text-3xl font-bold">
-            ${reportData.totalAmount}
+            ${Number(
+  reportData.totalAmount || 0
+).toFixed(2)}
           </p>
         </div>
 
@@ -233,7 +235,7 @@ doc.text(
         <div className="bg-blue-700 p-5 rounded-xl">
           <h3>Price Match %</h3>
           <p className="text-3xl font-bold">
-            {reportData.priceMatchPercentage}%
+            {reportData.overallPriceMatchPercentage}%
           </p>
         </div>
         <div className="bg-red-700 p-5 rounded-xl">
@@ -327,141 +329,254 @@ doc.text(
         <h3 className="text-xl font-bold mb-4">
           Procurement Analysis
         </h3>
+<table className="w-full border-collapse">
 
-        <table className="w-full border-collapse">
+ <thead>
+  <tr className="border-b border-slate-700">
 
-          <thead>
+    <th className="p-2 text-left">
+      Product
+    </th>
 
-            <tr className="border-b border-slate-700">
+    <th className="p-2 text-left">
+      Specification
+    </th>
 
-              <th className="p-2 text-left">
-                Product
-              </th>
+    <th className="p-2 text-left">
+      Requested Qty
+    </th>
 
-              <th className="p-2 text-left">
-                Requested Qty
-              </th>
+    <th className="p-2 text-left">
+      Target Price
+    </th>
 
-              <th className="p-2 text-left">
-                Addressed Qty
-              </th>
+    <th className="p-2 text-left">
+      Best Vendor
+    </th>
 
-              <th className="p-2 text-left">
-                Target Price
-              </th>
+    <th className="p-2 text-left">
+      Addressed Qty
+    </th>
 
-              <th className="p-2 text-left">
-                Vendor Price
-              </th>
+    <th className="p-2 text-left">
+      Vendor Price
+    </th>
 
-              <th className="p-2 text-left">
-                Price Difference
-              </th>
-              
-              <th className="p-2 text-left">
-                Specification Status
-              </th>
+    <th className="p-2 text-left">
+      Price Difference
+    </th>
 
-              <th className="p-2 text-left">
-                Remarks
-              </th>
+    <th className="p-2 text-left">
+      Specification Status
+    </th>
 
-              <th className="p-2 text-left">
-                AI Recommendation
-              </th>
+    <th className="p-2 text-left">
+      Recommendation
+    </th>
 
-            </tr>
+  </tr>
+</thead>
 
-          </thead>
+<tbody>
 
-          <tbody>
+  {reportData.products?.map(
+    (item: any, index: number) => {
 
-            {reportData.products.map(
-              (
-                item: any,
-                index: number
-              ) => (
+      const hasVendor =
+        !!item.cheapestVendor;
 
-                <tr
-                  key={index}
-                  className="border-b border-slate-800"
-                >
+      const addressedQty =
+        hasVendor
+          ? Number(
+              item.vendors?.find(
+                (v: any) =>
+                  v.vendor ===
+                  item.cheapestVendor
+              )?.quantity ??
+              item.requestedQty ??
+              0
+            )
+          : 0;
 
-                  <td className="p-2">
-                    {item.productName}
-                  </td>
+      const vendorPrice =
+        hasVendor
+          ? Number(
+              item.cheapestPrice || 0
+            )
+          : 0;
 
-                  <td className="p-2">
-                    {item.requestedQty}
-                  </td>
+      const targetPrice =
+        Number(
+          item.targetPrice || 0
+        );
 
-                  <td className="p-2">
-                    {item.addressedQty}
-                  </td>
+      const priceDifference =
+        vendorPrice -
+        targetPrice;
 
-                  <td className="p-2">
-                    ${item.targetPrice}
-                  </td>
+      return (
 
-                  <td className="p-2">
-                    ${item.vendorPrice}
-                  </td>
+        <tr
+          key={index}
+          className="border-b border-slate-800"
+        >
 
-                  <td className="p-2">
-                    ${item.priceDifference}
-                  </td>
-                  
-                  <td className="p-2">
-                    {item.specStatus}
-                  </td>
+          {/* PRODUCT */}
 
-                  <td className="p-2">
-                    {item.remarks}
-                  </td>
+          <td className="p-2">
+            {item.productName}
+          </td>
 
-                  <td className="p-2">
+          {/* SPECIFICATION */}
 
-                    <span
-                      className={`px-3 py-1 rounded text-white ${
-                        item.recommendation ===
-                        "Recommended"
-                          ? "bg-green-600"
-                          : item.recommendation ===
-                            "Qty Match"
-                          ? "bg-yellow-600"
-                          : "bg-red-600"
-                      }`}
-                    >
+          <td className="p-2 text-sm text-slate-300">
+            {item.specification || "NA"}
+          </td>
 
-                      {item.recommendation}
+          {/* REQUESTED QTY */}
 
-                    </span>
+          <td className="p-2">
+            {Number(
+              item.requestedQty || 0
+            )}
+          </td>
 
-                  </td>
+          {/* TARGET PRICE */}
 
-                </tr>
+          <td className="p-2">
+            ${targetPrice.toFixed(2)}
+          </td>
 
-              )
+          {/* BEST VENDOR */}
+
+          <td className="p-2 font-medium">
+
+            {hasVendor
+              ? item.cheapestVendor
+              : (
+                <span className="text-red-400">
+                  No vendor quoted
+                </span>
+              )}
+
+          </td>
+
+          {/* ADDRESSED QTY */}
+
+          <td className="p-2">
+
+            {hasVendor
+              ? addressedQty
+              : "NA"}
+
+          </td>
+
+          {/* VENDOR PRICE */}
+
+          <td className="p-2">
+
+            {hasVendor
+              ? `$${vendorPrice.toFixed(2)}`
+              : "NA"}
+
+          </td>
+
+          {/* PRICE DIFFERENCE */}
+
+          <td className="p-2">
+
+            {hasVendor ? (
+
+              <span
+                className={
+                  priceDifference <= 0
+                    ? "text-green-400"
+                    : "text-red-400"
+                }
+              >
+
+                {priceDifference > 0
+                  ? "+"
+                  : ""}
+
+                ${priceDifference.toFixed(2)}
+
+              </span>
+
+            ) : (
+              "NA"
             )}
 
-          </tbody>
+          </td>
 
-        </table>
+          {/* SPECIFICATION STATUS */}
 
+          <td className="p-2">
+
+            {item.specStatus ===
+            "Specification Match" ? (
+
+              <span className="text-green-400">
+                Match
+              </span>
+
+            ) : (
+
+              <span className="text-red-400">
+                {item.specStatus || "NA"}
+              </span>
+
+            )}
+
+          </td>
+
+          {/* RECOMMENDATION */}
+
+          <td className="p-2">
+
+            <span
+              className={`px-3 py-1 rounded text-white ${
+                item.recommendation ===
+                "Recommended"
+                  ? "bg-green-600"
+                  : item.recommendation ===
+                    "Above Target"
+                  ? "bg-yellow-600"
+                  : "bg-red-600"
+              }`}
+            >
+
+              {item.recommendation}
+
+            </span>
+
+          </td>
+
+        </tr>
+
+      );
+
+    }
+  )}
+
+</tbody>
+</table>
       </div>
       
 
       {/* Missing Products */}
       
-      <div className="bg-slate-900 p-6 rounded-xl">
+      {/* Missing Products */}
 
-        <h3 className="text-xl font-bold mb-4">
-          Missing Products
-        </h3>
+<div className="bg-slate-900 p-6 rounded-xl">
 
-        {reportData.missingProducts?.length > 0 ? (
+  <h3 className="text-xl font-bold mb-4">
+    Missing Products
+  </h3>
 
-    <ul>
+  {reportData.missingProducts?.length > 0 ? (
+
+    <ul className="space-y-2">
 
       {reportData.missingProducts.map(
         (
@@ -470,11 +585,15 @@ doc.text(
         ) => (
 
           <li key={index}>
+
             ❌ {item.productName}
+
             {" "}
+
             (
-            {item.SpecValue || "NA"}
+            {item.specValue || "NA"}
             )
+
           </li>
 
         )
@@ -492,6 +611,8 @@ doc.text(
 
 </div>
 
+{/* Extra Products */}
+
 <div className="bg-slate-900 p-6 rounded-xl">
 
   <h3 className="text-xl font-bold mb-4">
@@ -500,7 +621,7 @@ doc.text(
 
   {reportData.extraProducts?.length > 0 ? (
 
-    <ul>
+    <ul className="space-y-2">
 
       {reportData.extraProducts.map(
         (
@@ -509,11 +630,21 @@ doc.text(
         ) => (
 
           <li key={index}>
-            ⚠️ {item.ProductName}
+
+            ⚠️ {item.productName}
+
             {" "}
+
             (
-            {item.SpecValue || "NA"}
+            {item.specValue || "NA"}
             )
+
+            {" - "}
+
+            <span className="text-yellow-400">
+              {item.vendor}
+            </span>
+
           </li>
 
         )
@@ -560,57 +691,83 @@ doc.text(
 
       {/* Quote Details */}
 
+           {/* Quote Details */}
+
       <div className="bg-slate-900 p-6 rounded-xl">
 
         <h3 className="text-xl font-bold mb-4">
           Quote Details
         </h3>
 
-        <ul className="space-y-2">
+        <div className="space-y-2">
 
-          <li>
-            Parent Quote ID:
-            {" "}
-            {reportData.parentQuoteId}
-          </li>
+          <h4 className="font-semibold text-lg text-blue-400">
+            Selected Quote
+          </h4>
 
-          <li>
-            Quote ID:
-            {" "}
-            {reportData.quoteId}
-          </li>
+          <p>
+            Quote ID:{" "}
+            {reportData.inputQuoteId || "N/A"}
+          </p>
 
-          <li>
-            Quote Name:
-            {" "}
-            {reportData.quoteName}
-          </li>
+          <p>
+            Quote Number:{" "}
+            {reportData.selectedQuoteNumber || "N/A"}
+          </p>
 
-          <li>
-            Quote Number:
-            {" "}
-            {reportData.quoteNumber}
-          </li>
+          <p>
+            Quote Name:{" "}
+            {reportData.selectedQuoteName || "N/A"}
+          </p>
 
-          <li>
-            Quote Type:
-            {" "}
-            {reportData.quoteType}
-          </li>
+          <p>
+            Vendor:{" "}
+            {reportData.selectedVendor || "N/A"}
+          </p>
 
-          <li>
-            Total Products:
-            {" "}
+          <p>
+            Quote Type:{" "}
+            {reportData.selectedQuoteType || "N/A"}
+          </p>
+
+          <h4 className="font-semibold text-lg text-green-400 mt-6">
+            Parent Master Quote
+          </h4>
+
+          <p>
+            Master Quote ID:{" "}
+            {reportData.parentQuoteId || "N/A"}
+          </p>
+
+          <p>
+            Master Quote Number:{" "}
+            {reportData.parentQuoteNumber || "N/A"}
+          </p>
+
+          <p>
+            Master Quote Name:{" "}
+            {reportData.parentQuoteName || "N/A"}
+          </p>
+
+          <h4 className="font-semibold text-lg mt-6">
+            Analysis Summary
+          </h4>
+
+          <p>
+            Total Master Products:{" "}
             {reportData.totalProducts}
-          </li>
+          </p>
 
-          <li>
-            Total Amount:
-            $
-            {reportData.totalAmount}
-          </li>
+          <p>
+            Best Combined Vendor Cost: $
+            {Number(
+              reportData.bestCombinedVendorCost ||
+              reportData.totalAmount ||
+              0
+            ).toFixed(2)}
+          </p>
 
-        </ul>
+        </div>
 
       </div>
 
