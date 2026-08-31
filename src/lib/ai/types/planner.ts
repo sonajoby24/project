@@ -2,7 +2,19 @@ export interface RetrievalPlan {
 
   goal: string;
 
-  intent: string;
+  intent:
+    | "PRODUCT_SEARCH"
+    | "VENDOR_SEARCH"
+    | "QUOTE_SEARCH"
+    | "ORDER_SEARCH"
+    | "COMPARE_VENDORS"
+    | "PROCUREMENT_ANALYSIS"
+    | "SHOW_ALL_PRODUCTS"
+    | "SHOW_ALL_VENDORS"
+    | "SHOW_ALL_QUOTES"
+    | "SHOW_ALL_ORDERS"
+    | "REPORT"
+    | "UNKNOWN";
 
   reasoning:
     | "LOOKUP"
@@ -27,20 +39,35 @@ export interface RetrievalPlan {
 
   collections: string[];
 
-  filters: {
-  field: string;
-  operator: "==" | "contains" | ">" | "<";
-  value: string;
-}[];
+  fields: string[];
 
-projection: string[];
+  filters?: {
 
-sort?: {
-  field: string;
-  direction: "asc" | "desc";
-};
+    field: string;
 
-limit?: number;
+    operator:
+      | "=="
+      | "contains"
+      | ">"
+      | "<";
+
+    value: string;
+
+  }[];
+
+  projection?: string[];
+
+  sort?: {
+
+    field: string;
+
+    direction:
+      | "asc"
+      | "desc";
+
+  };
+
+  limit?: number;
 
   semanticSearch: boolean;
 
@@ -61,7 +88,13 @@ limit?: number;
       | "pinecone"
       | "firestore";
 
-    collection: string;
+    collection:
+      | "Product"
+      | "Vendor"
+      | "Quote"
+      | "QuoteLine"
+      | "Order"
+      | "Report";
 
     operation: string;
 

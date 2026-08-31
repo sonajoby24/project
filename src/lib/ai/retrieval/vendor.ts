@@ -1,10 +1,11 @@
 import { adminDb } from "@/lib/firebase-admin";
 
 export async function retrieveVendors(
-  query: string,
-  nlu: any
+  plan: any
 ) {
-  const data: any = {};
+  const data: any = {
+    vendors: [],
+  };
 
   const snapshot = await adminDb
     .collection("vendor")
@@ -15,50 +16,64 @@ export async function retrieveVendors(
     ...doc.data(),
   }));
 
-  // -------------------------
-  // Show all vendors
-  // -------------------------
+  // -----------------------------------------
+  // SHOW ALL VENDORS
+  // -----------------------------------------
 
-  if (nlu.intent === "SHOW_ALL_VENDORS") {
+  if (plan.intent === "SHOW_ALL_VENDORS") {
     data.vendors = vendors;
     return data;
   }
 
-  // -------------------------
-  // Search using NLU entity
-  // -------------------------
+  // -----------------------------------------
+  // VENDOR ENTITY FROM PLANNER
+  // -----------------------------------------
 
- const entity =
-(nlu.entities?.vendor || "").toLowerCase();
+  const entity = String(
+    plan.entities?.vendor || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  console.log(
+    "SEARCH VENDOR ENTITY:",
+    entity
+  );
 
   if (!entity) {
     return data;
   }
 
-  const results = vendors.filter((vendor: any) => {
+  // -----------------------------------------
+  // SEARCH VENDOR
+  // -----------------------------------------
 
-  const vendorName =
-    String(
-      vendor.Vendor ||
-      vendor.vendorName ||
-      vendor.Name ||
-      ""
-    ).toLowerCase();
+  const results = vendors.filter(
+    (vendor: any) => {
 
-  return vendorName.includes(entity);
+      const vendorName =
+        String(
+          vendor.Vendor ||
+          vendor.vendorName ||
+          vendor.Name ||
+          ""
+        ).toLowerCase();
 
-});
-const uniqueResults = Array.from(
-  new Map(
-    results.map((vendor: any) => [
-      vendor.id,
-      vendor,
-    ])
-  ).values()
-);
+      return vendorName.includes(entity);
+    }
+  );
 
-data.vendors = uniqueResults;
+  const uniqueResults =
+    Array.from(
+      new Map(
+        results.map((vendor: any) => [
+          vendor.id,
+          vendor,
+        ])
+      ).values()
+    );
 
-return data;
+  data.vendors = uniqueResults;
 
+  return data;
 }

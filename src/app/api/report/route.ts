@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { generateMasterQuoteReport }
 from "@/lib/ai/procurement/masterQuoteReport";
+import { runProcurementAgent } from "@/lib/ai/procurement/procurementAgent";
 
 function normalize(value: string = "") {
 
@@ -212,8 +213,8 @@ console.log(
 );
 // Master Quote → compare against ALL vendors
 let procurement: any;
-procurement =
- generateMasterQuoteReport(
+
+procurement = generateMasterQuoteReport(
   analysisQuotes,
   vendorQuote
 );
@@ -223,9 +224,63 @@ console.log(
   procurement
 );
 
+// ------------------------------------
+// AI PROCUREMENT ANALYSIS
+// ------------------------------------
+let aiAnalysis = null;
+
+try {
+  aiAnalysis = await runProcurementAgent(
+    procurement
+  );
+
+  console.log(
+    "AI PROCUREMENT ANALYSIS:",
+    aiAnalysis
+  );
+
+} catch (error) {
+
+  console.error(
+    "AI PROCUREMENT ANALYSIS ERROR:",
+    error
+  );
+
+  // Keep the deterministic procurement evidence
+  // even when Gemini fails.
+  aiAnalysis = {
+    executiveRecommendation:
+      "AI analysis unavailable. Procurement evidence is still available.",
+
+    overallAssessment:
+      "The procurement analysis was calculated successfully, but AI reasoning could not be generated.",
+
+    recommendedVendors: [],
+
+    productRecommendations: [],
+
+    risks: [
+      "AI analysis unavailable because the Gemini service could not complete the request."
+    ],
+
+    opportunities: [],
+
+    insights: [],
+
+    procurementActions: [
+      "Review the deterministic procurement analysis before making purchasing decisions."
+    ]
+  };
+}
+
 return NextResponse.json({
   success: true,
-  report: procurement
+
+  report: {
+    ...procurement,
+
+    aiAnalysis
+  }
 });
 
 const missingProducts = masterLines.filter((master: any) => {

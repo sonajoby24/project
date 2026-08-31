@@ -1,130 +1,106 @@
 export function formatVendorComparison(
-  comparison: any[],
+  comparison: any,
   question: string
 ): string {
 
-  if (!comparison.length) {
-    return "No vendors found.";
+  if (!comparison) {
+    return "No vendor comparison information is available.";
   }
 
-  const q = question.toLowerCase();
+  const q =
+    question.toLowerCase();
 
-  // Remove duplicate vendors by name
-  const unique = new Map<string, any>();
+  // ============================================================
+  // CHEAPEST VENDOR
+  // ============================================================
 
-  comparison.forEach((vendor) => {
-    if (!unique.has(vendor.vendorName)) {
-      unique.set(vendor.vendorName, vendor);
-    }
-  });
-
-  const vendors = [...unique.values()];
-
-  // -----------------------------
-  // BEST VENDOR
-  // -----------------------------
   if (
-    q.includes("best vendor") ||
-    q.includes("which vendor is the best")
+    q.includes("cheapest") ||
+    q.includes("lowest price") ||
+    q.includes("least expensive")
   ) {
 
-    const rated = vendors.filter(
-      (v) => v.rating != null
-    );
+    const cheapest =
+      comparison.cheapestVendor;
 
-    if (!rated.length) {
-
-      return `Unable to determine the best vendor.
-
-Reason:
-
-The current Firebase vendor records contain:
-
-• Vendor Name
-• Account ID
-• Email
-• Phone
-• Status
-
-The following comparison fields are missing:
-
-• Rating
-• Delivery Days
-• Total Orders
-
-Therefore a best vendor recommendation cannot be generated from the available data.`;
-
+    if (!cheapest) {
+      return (
+        "Unable to determine the cheapest vendor " +
+        "from the available quote data."
+      );
     }
 
-    rated.sort((a, b) => b.rating - a.rating);
+    return `
+Cheapest Vendor
 
-    return `Best Vendor
+Vendor : ${cheapest.vendor}
 
-Vendor Name : ${rated[0].vendorName}
+Average Price : ${cheapest.averagePrice}
 
-Rating : ${rated[0].rating}`;
+The average price is calculated from the available
+priced quote lines for each vendor.
+`.trim();
   }
 
-  // -----------------------------
-  // HIGHEST RATING
-  // -----------------------------
+
+  // ============================================================
+  // CHEAPEST VENDOR BY PRODUCT
+  // ============================================================
+
   if (
-    q.includes("highest rating")
+    comparison.cheapestByProduct?.length
   ) {
 
-    const rated = vendors.filter(
-      (v) => v.rating != null
-    );
+    let answer =
+      "Vendor Price Comparison\n\n";
 
-    if (!rated.length) {
-      return "Rating information is not available for any vendor.";
-    }
+    comparison.cheapestByProduct.forEach(
+      (item: any) => {
 
-    rated.sort((a, b) => b.rating - a.rating);
-
-    return `Highest Rated Vendor
-
-Vendor Name : ${rated[0].vendorName}
-
-Rating : ${rated[0].rating}`;
-  }
-
-  // -----------------------------
-  // NORMAL COMPARISON
-  // -----------------------------
-  let answer = "Vendor Comparison\n\n";
-
-  vendors.forEach((vendor) => {
-
-    answer +=
-`Vendor Name : ${vendor.vendorName || "Not Available"}
-Account ID : ${vendor.accountId || "Not Available"}
-Email : ${vendor.email || "Not Available"}
-Phone : ${vendor.phone || "Not Available"}
-Status : ${vendor.status || "Not Available"}
-Rating : ${vendor.rating ?? "Not Available"}
-Delivery Days : ${vendor.deliveryDays ?? "Not Available"}
-
-----------------------------------------
+        answer +=
+`Product : ${item.product}
+Cheapest Vendor : ${item.vendor}
+Unit Price : ${item.unitPrice}
+Quote Number : ${item.quoteNumber || "Not Available"}
+Quote Type : ${item.quoteType || "Not Available"}
 
 `;
 
-  });
-if (
-  comparison.length &&
-  comparison[0].cheapestVendor
-) {
+      }
+    );
 
-  answer +=
-`\nCheapest Vendor
+    return answer.trim();
+  }
 
-Vendor : ${comparison[0].cheapestVendor.vendor}
 
-Average Price : ${comparison[0].cheapestVendor.averagePrice}
+  // ============================================================
+  // GENERAL COMPARISON
+  // ============================================================
+
+  if (
+    comparison.vendors?.length
+  ) {
+
+    let answer =
+      "Vendor Price Comparison\n\n";
+
+    comparison.vendors.forEach(
+      (vendor: any) => {
+
+        answer +=
+`Vendor : ${vendor.vendor}
+Average Price : ${vendor.averagePrice}
 
 `;
 
-}
+      }
+    );
 
-  return answer.trim();
+    return answer.trim();
+  }
+
+
+  return (
+    "No vendor comparison information is available."
+  );
 }

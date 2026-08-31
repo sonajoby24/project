@@ -17,11 +17,13 @@ export async function createPlan(
 
       model: "openai/gpt-4o-mini",
 
-      temperature: 0,
+temperature: 0,
 
-      response_format: {
-        type: "json_object"
-      },
+max_tokens: 800,
+
+response_format: {
+  type: "json_object"
+},
 
       messages: [
 
@@ -30,50 +32,31 @@ export async function createPlan(
           content: PLANNER_PROMPT
         },
 
-      {
-  role: "user",
-  content: `
-You are creating an execution plan.
+        {
+          role: "user",
+          content: `
+Create an execution-ready retrieval plan.
 
-Return:
+The Retrieval Engine will execute ONLY the JSON plan.
 
-Goal
+Use the NLU output as the primary understanding of the user's request.
 
-Intent
+Do not answer the user.
 
-Entities
-
-Collections
-
-Projection
-
-Filters
-
-Reasoning
-
-Output Format
-
-Retrieval Plan
-
-The Retrieval Engine will never inspect the original question.
-
-Your JSON must contain everything required to answer the question.
 User Question:
 ${userQuestion}
 
 NLU Output:
-
 ${JSON.stringify(nlu, null, 2)}
 
-Use the NLU output as the primary understanding of the user's request.
+Return a JSON object containing:
 
-Generate:
-
-- Goal
-- Intent
-- Entities
-- Collections
-- Fields
+- goal
+- intent
+- reasoning
+- entities
+- collections
+- fields
 - semanticSearch
 - requiresComparison
 - requiresReasoning
@@ -81,21 +64,60 @@ Generate:
 - confidence
 - retrievalPlan
 
-Return ONLY JSON.
+Optional fields may include:
+
+- filters
+- projection
+- sort
+- limit
+
+Important:
+
+1. Preserve the user's entity from the NLU when available.
+2. Do not invent entities.
+3. Do not invent database values.
+4. Select only the collections necessary to answer the request.
+5. Use QuoteLine for price, specification, quantity, and target price.
+6. Use Vendor for vendor information.
+7. Use Product for product master information.
+8. Use Quote for quote information.
+9. Use Order for order information.
+10. Use reasoning when comparison, analysis, or recommendation is required.
+11. Always provide retrievalPlan.
+12. Return ONLY valid JSON.
 `
-}
+        }
 
       ]
 
     });
 
   const json =
-    completion.choices[0].message.content || "{}";
+    completion.choices[0]?.message?.content || "{}";
 
-  console.log("========== PLANNER ==========");
-console.log(json);
-console.log("=============================");
+  console.log(
+    "========== PLANNER =========="
+  );
 
-  return JSON.parse(json);
+  console.log(json);
 
+  console.log(
+    "============================="
+  );
+
+  const result =
+    JSON.parse(json);
+
+  if (
+    !result.intent ||
+    !Array.isArray(result.retrievalPlan)
+  ) {
+
+    throw new Error(
+      "Invalid retrieval plan returned by planner"
+    );
+
+  }
+
+  return result;
 }

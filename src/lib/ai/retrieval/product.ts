@@ -1,74 +1,58 @@
 import { adminDb } from "@/lib/firebase-admin";
 
-const STOP_WORDS = [
-  "show",
-  "list",
-  "find",
-  "search",
-  "details",
-  "detail",
-  "of",
-  "the",
-  "product",
-  "products",
-  "from",
-  "vendor",
-  "about",
-  "for",
-  "all"
-];
-
-export async function retrieveProducts(query: string, nlu: any) {
-
+export async function retrieveProducts(
+  query: string,
+  entities: any,
+  intent?: string
+) {
   const snapshot = await adminDb
     .collection("products")
     .get();
 
-  const products = snapshot.docs.map(doc => ({
+  const products = snapshot.docs.map((doc) => ({
     id: doc.id,
-    ...doc.data()
+    ...doc.data(),
   }));
 
-  // Show all products
+  // -----------------------------------------
+  // SHOW ALL PRODUCTS
+  // -----------------------------------------
 
-  if (
-    query.toLowerCase().includes("show all products") ||
-    query.toLowerCase().includes("list all products")
-  ) {
-
+  if (intent === "SHOW_ALL_PRODUCTS") {
     return products;
-
   }
 
-  // Build search tokens
+  // -----------------------------------------
+  // PRODUCT ENTITY FROM NLU / PLANNER
+  // -----------------------------------------
 
-  const entity =
-  (nlu.product || nlu.entityName || "").toLowerCase();
+  const entity = String(
+    entities?.product || ""
+  )
+    .trim()
+    .toLowerCase();
 
-console.log("SEARCH ENTITY:", entity);
+  console.log("SEARCH PRODUCT ENTITY:", entity);
+
+  if (!entity) {
+    return [];
+  }
+
+  // -----------------------------------------
+  // SEARCH PRODUCT RECORDS
+  // -----------------------------------------
 
   const scored = products.map((product: any) => {
-
     const searchable = [
-
       product.productId,
-
       product.name,
-
       product.brand,
-
       product.category,
-
       product["part name"],
-
       product["part id"],
-
       product.Vendor,
-
       product.Colour,
-
-      product.status
-
+      product.status,
     ]
       .filter(Boolean)
       .join(" ")
@@ -76,25 +60,17 @@ console.log("SEARCH ENTITY:", entity);
 
     let score = 0;
 
-    if (
-  entity &&
-  searchable.includes(entity)
-) {
-  score = 100;
-}
+    if (searchable.includes(entity)) {
+      score = 100;
+    }
 
     return {
-
       ...product,
-
-      score
-
+      score,
     };
-
   });
 
   return scored
-    .filter(p => p.score > 0)
+    .filter((product) => product.score > 0)
     .sort((a, b) => b.score - a.score);
-
 }

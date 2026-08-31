@@ -1,63 +1,112 @@
 export function rankResults(data: any) {
 
-  if (!data) return data;
+  if (!data) {
+    return data;
+  }
 
-  const ranked = { ...data };
+  const ranked = {
+    ...data
+  };
 
-  // Products
+  // ============================================================
+  // PRODUCTS
+  // ============================================================
+
   if (Array.isArray(ranked.products)) {
 
-    ranked.products = ranked.products
-      .sort((a: any, b: any) => {
+    ranked.products =
+      ranked.products.sort(
+        (a: any, b: any) => {
 
-        const scoreA =
-          Number(a.relevanceScore || 0);
+          const scoreA =
+            Number(
+              a.score ??
+              a.relevanceScore ??
+              0
+            );
 
-        const scoreB =
-          Number(b.relevanceScore || 0);
+          const scoreB =
+            Number(
+              b.score ??
+              b.relevanceScore ??
+              0
+            );
 
-        return scoreB - scoreA;
-
-      })
-      .slice(0, 10);
-
+          return scoreB - scoreA;
+        }
+      );
   }
 
-  // Vendors
+
+  // ============================================================
+  // VENDORS
+  // ============================================================
+
   if (Array.isArray(ranked.vendors)) {
 
-    ranked.vendors = ranked.vendors
-      .sort((a: any, b: any) => {
+    ranked.vendors =
+      ranked.vendors.sort(
+        (a: any, b: any) => {
 
-        const ratingA =
-          Number(a.rating || 0);
+          const ratingA =
+            Number(
+              a.rating ??
+              a.Rating ??
+              0
+            );
 
-        const ratingB =
-          Number(b.rating || 0);
+          const ratingB =
+            Number(
+              b.rating ??
+              b.Rating ??
+              0
+            );
 
-        return ratingB - ratingA;
-
-      })
-      .slice(0, 10);
-
+          return ratingB - ratingA;
+        }
+      );
   }
 
-  // Quotes
+
+  // ============================================================
+  // QUOTES
+  //
+  // IMPORTANT:
+  // Do NOT slice quotes.
+  //
+  // Procurement analysis may require:
+  // 1. Master quote
+  // 2. Multiple vendor quotes
+  // ============================================================
+
   if (Array.isArray(ranked.quotes)) {
 
     ranked.quotes =
-      ranked.quotes.slice(0, 10);
-
+      [...ranked.quotes];
   }
 
-  // Orders
+
+  // ============================================================
+  // ORDERS
+  // ============================================================
+
   if (Array.isArray(ranked.orders)) {
 
     ranked.orders =
-      ranked.orders.slice(0, 10);
-
+      [...ranked.orders];
   }
 
-  return ranked;
 
+  // ============================================================
+  // QUOTE LINES
+  // ============================================================
+
+  if (Array.isArray(ranked.quoteLines)) {
+
+    ranked.quoteLines =
+      [...ranked.quoteLines];
+  }
+
+
+  return ranked;
 }

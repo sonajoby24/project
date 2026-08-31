@@ -225,25 +225,44 @@ identify a fulfilment risk.
 
 ------------------------------------------------------------
 VENDOR STRATEGY
-------------------------------------------------------------
 
 Evaluate whether:
 
-A. A single vendor strategy is supported by the evidence.
+A. A single-vendor strategy is supported by the evidence.
 
 OR
 
 B. A multi-vendor strategy is better supported.
 
-Do not automatically recommend splitting procurement.
+Do not automatically select a single vendor based only on price.
 
-Only recommend a split-vendor strategy when the evidence
-supports meaningful benefits such as:
+If one vendor is the only vendor quoting a product,
+treat that vendor as the supported source for that product.
 
-- better product coverage
-- lower product-level cost
-- better quantity fulfilment
-- better specification compliance
+If different vendors are the only quoted or lowest-priced
+source for different products, this supports a multi-vendor
+strategy.
+
+If both vendors quote a product at the same price,
+do not claim either vendor has a price advantage.
+
+When evaluating single-vendor versus multi-vendor strategy,
+consider the complete product coverage across all supplied
+evidence, not only the selected quote.
+
+If neither vendor can independently fulfill all master products,
+do not recommend a single-vendor strategy as the preferred
+strategy.
+
+Instead, state that a multi-vendor strategy is better supported
+by the available evidence.
+
+However, do not assume that multi-vendor procurement is
+operationally superior when information such as shipping,
+lead time, stock availability, payment terms, or supplier
+performance is unavailable.
+
+State these as procurement risks or information gaps.
 
 Do NOT invent:
 
@@ -331,30 +350,38 @@ Perform intelligent procurement reasoning.
 
 Determine:
 
-1. The best overall procurement strategy.
+1. The best overall procurement strategy,
+   based on complete vendor coverage and product-level pricing.
 
-2. The overall procurement assessment.
+2. Determine whether Element14 can independently fulfill
+   all master products.
 
-3. Which vendors are suitable and why.
+3. Determine whether Mouser Electronics can independently
+   fulfill all master products.
 
-4. Which products should be recommended.
+4. If neither vendor can independently fulfill all master
+   products, determine whether a multi-vendor strategy
+   is better supported.
 
-5. Which products require human review.
+5. The overall procurement assessment.
 
-6. Which products should not be recommended.
+6. Which vendors are suitable and why.
 
-7. Which products are not quoted.
+7. Which products should be recommended.
 
-8. Procurement risks.
+8. Which products require human review.
 
-9. Cost-saving opportunities.
+9. Which products should not be recommended.
 
-10. Important procurement insights.
+10. Which products are not quoted.
 
-11. Concrete procurement actions.
+11. Procurement risks.
 
-12. Whether the evidence supports a single-vendor
-    or multi-vendor procurement strategy.
+12. Cost-saving opportunities.
+
+13. Important procurement insights.
+
+14. Concrete procurement actions.
 
 IMPORTANT:
 
@@ -406,9 +433,8 @@ Return ONLY JSON.
          * Gemini 3.6 Flash supports thinking configuration.
          */
 
-        model:
-          "gemini-2.5-flash",
-
+       model: "gemini-3.6-flash", 
+       
         contents:
           prompt,
 

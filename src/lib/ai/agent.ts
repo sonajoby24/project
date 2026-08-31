@@ -48,14 +48,13 @@ export async function runAgent(
     // 1. UNDERSTAND USER QUERY
     // ============================================================
 
-    const rewrittenQuery =
-      rewriteQuery(userMessage);
+   const rewrittenQuery =
+  rewriteQuery(userMessage);
 
-
-    const nlu =
-      await understandQuestion(
-        rewrittenQuery
-      );
+const nlu =
+  await understandQuestion(
+    userMessage
+  );
 
 
     // ============================================================

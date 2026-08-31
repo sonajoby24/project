@@ -1,6 +1,15 @@
 import { adminDb } from "@/lib/firebase-admin";
 
-export async function retrieveQuotes(query: string) {
+export async function retrieveQuotes(
+  plan: any
+) {
+  const quoteEntity =
+    String(plan.entities?.quote || "").trim();
+
+  console.log(
+    "QUOTE ENTITY FROM PLANNER:",
+    quoteEntity
+  );
 
   const data: any = {
     quotes: []
@@ -23,11 +32,25 @@ export async function retrieveQuotes(query: string) {
 
 
   // ============================================================
+  // SHOW ALL QUOTES
+  // ============================================================
+
+  if (
+    plan.intent === "SHOW_ALL_QUOTES"
+  ) {
+
+    data.quotes = quotes;
+
+    return data;
+  }
+
+
+  // ============================================================
   // SEARCH BY QUOTE NUMBER
   // ============================================================
 
   const quoteNumberMatch =
-    query.match(/\b\d{8}\b/);
+    quoteEntity.match(/^\d{8}$/);
 
 
   if (quoteNumberMatch) {
@@ -62,7 +85,6 @@ export async function retrieveQuotes(query: string) {
       );
 
       return data;
-
     }
 
 
@@ -83,12 +105,10 @@ export async function retrieveQuotes(query: string) {
       selectedInfo
     );
 
-
     console.log(
       "SELECTED QUOTE ID:",
       selectedQuoteId
     );
-
 
     console.log(
       "PARENT QUOTE ID:",
@@ -97,7 +117,7 @@ export async function retrieveQuotes(query: string) {
 
 
     // ==========================================================
-    // If this is a Master Quote
+    // MASTER QUOTE
     // ==========================================================
 
     if (
@@ -112,13 +132,9 @@ export async function retrieveQuotes(query: string) {
               quote?.QuoteInfo?.[0];
 
             return (
-              info?.QuoteId ===
-                selectedQuoteId ||
-
-              info?.ParentQuoteID ===
-                selectedQuoteId
+              info?.QuoteId === selectedQuoteId ||
+              info?.ParentQuoteID === selectedQuoteId
             );
-
           }
         );
 
@@ -134,17 +150,14 @@ export async function retrieveQuotes(query: string) {
 
 
       return data;
-
     }
 
 
     // ==========================================================
-    // Transactional Quote
-    //
+    // TRANSACTIONAL QUOTE
     // Find:
-    //
-    // 1. Master Quote
-    // 2. All vendor quotes belonging to that Master
+    // 1. Master quote
+    // 2. All vendor quotes belonging to master
     // ==========================================================
 
     if (parentQuoteId) {
@@ -161,23 +174,18 @@ export async function retrieveQuotes(query: string) {
             }
 
 
-            // Master quote itself
             const isMaster =
-              info?.QuoteId ===
-              parentQuoteId;
+              info?.QuoteId === parentQuoteId;
 
 
-            // Vendor quote belonging to master
             const isVendorQuote =
-              info?.ParentQuoteID ===
-              parentQuoteId;
+              info?.ParentQuoteID === parentQuoteId;
 
 
             return (
               isMaster ||
               isVendorQuote
             );
-
           }
         );
 
@@ -206,28 +214,22 @@ export async function retrieveQuotes(query: string) {
             "| VENDOR:",
             info?.VendorName
           );
-
         }
       );
 
 
       return data;
-
     }
 
 
     // ==========================================================
-    // No Parent Quote
-    //
-    // Return selected quote only
+    // NO PARENT QUOTE
     // ==========================================================
 
     data.quotes =
       [selectedQuote];
 
-
     return data;
-
   }
 
 
@@ -236,9 +238,7 @@ export async function retrieveQuotes(query: string) {
   // ============================================================
 
   const quoteIdMatch =
-    query.match(
-      /0Q0[a-zA-Z0-9]+/
-    );
+    quoteEntity.match(/^0Q0[a-zA-Z0-9]+$/);
 
 
   if (quoteIdMatch) {
@@ -257,15 +257,12 @@ export async function retrieveQuotes(query: string) {
           return (
             info?.QuoteId === quoteId
           );
-
         }
       );
 
 
     if (!selectedQuote) {
-
       return data;
-
     }
 
 
@@ -278,12 +275,11 @@ export async function retrieveQuotes(query: string) {
 
 
     // ----------------------------------------------------------
-    // Master quote
+    // MASTER QUOTE
     // ----------------------------------------------------------
 
     if (
-      selectedInfo?.QuoteType ===
-      "Master"
+      selectedInfo?.QuoteType === "Master"
     ) {
 
       data.quotes =
@@ -297,18 +293,16 @@ export async function retrieveQuotes(query: string) {
               info?.QuoteId === quoteId ||
               info?.ParentQuoteID === quoteId
             );
-
           }
         );
 
 
       return data;
-
     }
 
 
     // ----------------------------------------------------------
-    // Transactional quote
+    // TRANSACTIONAL QUOTE
     // ----------------------------------------------------------
 
     if (parentQuoteId) {
@@ -321,56 +315,21 @@ export async function retrieveQuotes(query: string) {
               quote?.QuoteInfo?.[0];
 
             return (
-              info?.QuoteId ===
-                parentQuoteId ||
-
-              info?.ParentQuoteID ===
-                parentQuoteId
+              info?.QuoteId === parentQuoteId ||
+              info?.ParentQuoteID === parentQuoteId
             );
-
           }
         );
 
 
       return data;
-
     }
 
 
     data.quotes =
       [selectedQuote];
 
-
     return data;
-
-  }
-
-
-  // ============================================================
-  // SHOW ALL QUOTES
-  // ============================================================
-
-  const lowerQuery =
-    query.toLowerCase();
-
-
-  if (
-
-    lowerQuery.includes(
-      "show all quotes"
-    ) ||
-
-    lowerQuery.includes(
-      "list all quotes"
-    )
-
-  ) {
-
-    data.quotes =
-      quotes;
-
-    return data;
-
   }
 
 
@@ -379,5 +338,4 @@ export async function retrieveQuotes(query: string) {
   // ============================================================
 
   return data;
-
 }

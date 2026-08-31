@@ -30,12 +30,24 @@ export function generateMasterQuoteReport(
   const masterLines =
     masterInfo?.Qlines || [];
 
-  const vendorQuotes =
-    quotes.filter(
-      q =>
-        q?.QuoteInfo?.[0]?.QuoteType !==
-        "Master"
-    );
+ const vendorQuotes = Array.from(
+  new Map(
+    quotes
+      .filter(
+        q =>
+          q?.QuoteInfo?.[0]?.QuoteType !== "Master"
+      )
+      .map((q: any) => {
+        const info = q?.QuoteInfo?.[0];
+
+        const uniqueKey =
+          info?.QuoteId ||
+          `${info?.VendorName || "Unknown Vendor"}-${info?.QuoteNumber || ""}`;
+
+        return [uniqueKey, q];
+      })
+  ).values()
+);
 
   if (vendorQuotes.length === 0) {
     return {
@@ -129,8 +141,8 @@ export function generateMasterQuoteReport(
 
   masterLines.forEach((master: any) => {
 
-    const matchingVendors: any[] = [];
-
+   const matchingVendors: any[] = [];
+const seenVendors = new Set<string>();
     vendorQuotes.forEach((vendorQuote: any) => {
 
       const vendorInfo =
@@ -141,6 +153,12 @@ export function generateMasterQuoteReport(
       const vendorName =
         vendorInfo?.VendorName ||
         "Unknown Vendor";
+
+      if (seenVendors.has(vendorName)) {
+  return;
+}
+
+seenVendors.add(vendorName);
 
       const vendorLines =
         vendorInfo?.Qlines || [];
@@ -328,6 +346,14 @@ export function generateMasterQuoteReport(
     const cheapest =
       matchingVendors[0];
 
+    const priceTie =
+  matchingVendors.length > 1 &&
+  matchingVendors.every(
+    (v: any) =>
+      Number(v.vendorPrice) ===
+      Number(cheapest.vendorPrice)
+  );
+
     const targetPrice =
       Number(
         master?.TargetPrice || 0
@@ -373,6 +399,8 @@ export function generateMasterQuoteReport(
         ),
 
       cheapestSavings,
+
+      priceTie,
 
       recommendation:
         cheapest.recommendation,
@@ -535,29 +563,30 @@ export function generateMasterQuoteReport(
    * ============================================================
    */
 
-  const vendorCoverage: Record<
-    string,
-    number
-  > = {};
+ const vendorCoverage: Record<string, number> = {};
 
-  vendorQuotes.forEach(
-    (quote: any) => {
+vendorQuotes.forEach(
+  (quote: any) => {
 
-      const info =
-        quote?.QuoteInfo?.[0];
+    const info =
+      quote?.QuoteInfo?.[0];
 
-      const vendor =
-        info?.VendorName ||
-        "Unknown Vendor";
+    const vendor =
+      info?.VendorName ||
+      "Unknown Vendor";
 
-      const lineCount =
-        info?.Qlines?.length || 0;
+    const uniqueProducts =
+      new Set(
+        (info?.Qlines || []).map(
+          (line: any) =>
+            `${normalize(line?.ProductName)}|${normalize(line?.specValue)}`
+        )
+      );
 
-      vendorCoverage[vendor] =
-        lineCount;
-
-    }
-  );
+    vendorCoverage[vendor] =
+      uniqueProducts.size;
+  }
+);
 
   const coverageText =
     Object.entries(

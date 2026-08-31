@@ -1,8 +1,11 @@
 import { adminDb } from "@/lib/firebase-admin";
 
-export async function retrieveOrders(query: string) {
-
-  const data: any = {};
+export async function retrieveOrders(
+  plan: any
+) {
+  const data: any = {
+    orders: [],
+  };
 
   const snapshot =
     await adminDb
@@ -15,47 +18,51 @@ export async function retrieveOrders(query: string) {
       ...doc.data(),
     }));
 
-  // -----------------------
-  // Show All Orders
-  // -----------------------
+  // -----------------------------------------
+  // SHOW ALL ORDERS
+  // -----------------------------------------
 
   if (
-    query.toLowerCase().includes("show all orders") ||
-    query.toLowerCase().includes("list all orders")
+    plan.intent ===
+    "SHOW_ALL_ORDERS"
   ) {
-
     data.orders = orders;
-
     return data;
-
   }
 
-  // -----------------------
-  // Order ID Search
-  // -----------------------
+  // -----------------------------------------
+  // ORDER ENTITY FROM PLANNER
+  // -----------------------------------------
 
-  const orderMatch =
-    query.match(/ORD\d+/i);
+  const orderId =
+    String(
+      plan.entities?.order || ""
+    )
+      .trim()
+      .toLowerCase();
 
-  if (orderMatch) {
+  console.log(
+    "SEARCH ORDER ENTITY:",
+    orderId
+  );
 
-    const orderId = orderMatch[0];
+  if (!orderId) {
+    return data;
+  }
 
-    const result =
-      orders.filter((order: any) =>
+  // -----------------------------------------
+  // SEARCH ORDER
+  // -----------------------------------------
 
-        String(order.orderId || "")
+  data.orders =
+    orders.filter(
+      (order: any) =>
+        String(
+          order.orderId || ""
+        )
           .toLowerCase()
-          .includes(orderId.toLowerCase())
+          === orderId
+    );
 
-      );
-
-    data.orders = result;
-
-    return data;
-
-  }
-
-  return {};
-
+  return data;
 }
