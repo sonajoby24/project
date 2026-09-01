@@ -111,11 +111,68 @@ Questions about a specific quotation or quote.
 
 ORDER_SEARCH:
 Questions about a specific order.
-
 COMPARE_VENDORS:
 Requests to compare vendors or suppliers based on price,
-rating, delivery, or other vendor-level criteria.
+rating, delivery, or other criteria.
 
+IMPORTANT PRODUCT-SPECIFIC COMPARISON RULE:
+
+If the user asks to compare vendors FOR A SPECIFIC PRODUCT,
+the product must be extracted as the entity.
+
+Examples:
+
+"Which vendor is cheapest for Banana Jack?"
+"Which supplier has the lowest price for Banana Jack?"
+"Who sells Banana Jack cheapest?"
+"Which vendor offers the best price for Banana Jack?"
+"Compare vendors for Banana Jack."
+
+For all of these requests, return:
+
+"intent": "COMPARE_VENDORS"
+"entityType": "Product"
+"entityName": "<product name>"
+"fields": ["UnitPrice"]
+
+Example:
+
+User:
+"Which vendor is cheapest for Banana Jack?"
+
+Return:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
+}
+
+If the user asks which vendor is cheapest WITHOUT specifying
+a product, classify it as a vendor-level comparison.
+
+Example:
+
+User:
+"Which vendor is cheapest?"
+
+Return:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Vendor",
+  "entityName": "",
+  "fields": ["UnitPrice"]
+}
+
+If the user asks which vendor has the highest rating WITHOUT
+specifying a product, classify it as:
+
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Vendor",
+  "entityName": "",
+  "fields": ["Rating"]
+}
 PROCUREMENT_ANALYSIS:
 Requests for procurement-level analysis, purchasing recommendations,
 supplier allocation, cost analysis, fulfillment analysis, risks,
@@ -142,6 +199,53 @@ Use when the request cannot be reliably classified.
 
 
 EXAMPLES:
+
+User:
+"Which vendor is cheapest for Banana Jack?"
+
+Return:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
+}
+
+
+User:
+"Which supplier has the lowest price for Banana Jack?"
+
+Return:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
+}
+
+
+User:
+"Who sells Banana Jack cheapest?"
+
+Return:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
+}
+
+
+User:
+"Which vendor offers the best price for Banana Jack?"
+
+Return:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
+}
 
 User:
 "Can you tell me everything about the diode?"

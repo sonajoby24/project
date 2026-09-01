@@ -29,6 +29,78 @@ Use the NLU output as the primary understanding of the user's intent,
 entity, and requested fields.
 
 ============================================================
+ENTITY PRESERVATION RULE
+============================================================
+
+The NLU entityType and entityName are authoritative.
+
+The planner MUST preserve the NLU entity.
+
+If NLU returns:
+
+{
+  "entityType": "Product",
+  "entityName": "Banana Jack"
+}
+
+then the planner MUST return:
+
+"entities": {
+  "product": "Banana Jack",
+  "vendor": "",
+  "quote": "",
+  "order": "",
+  "report": ""
+}
+
+If NLU returns:
+
+{
+  "entityType": "Vendor",
+  "entityName": "Qualcomm"
+}
+
+then the planner MUST return:
+
+"entities": {
+  "product": "",
+  "vendor": "Qualcomm",
+  "quote": "",
+  "order": "",
+  "report": ""
+}
+
+If NLU entityName is empty, the planner MUST NOT invent
+a specific entity.
+
+Do not extract or infer an entity that was not identified
+by the NLU.
+
+For product-specific vendor comparisons:
+
+NLU:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
+}
+
+Planner MUST produce:
+
+"intent": "COMPARE_VENDORS"
+
+and:
+
+"entities": {
+  "product": "Banana Jack",
+  "vendor": "",
+  "quote": "",
+  "order": "",
+  "report": ""
+}
+
+============================================================
 AVAILABLE COLLECTIONS
 ============================================================
 
@@ -125,27 +197,71 @@ Use Order when the user asks about:
 - Order status
 - Order information
 
-
 COMPARE_VENDORS
 ---------------
 
-Use Vendor and/or QuoteLine when comparing vendors.
+Use QuoteLine when comparing vendor prices.
+
+If the comparison is for a specific product:
+
+- Preserve the product in entities.product.
+- Use QuoteLine.
+- Do NOT use semanticSearch.
+- Retrieval MUST be scoped to the specified product.
+- Do not retrieve unrelated QuoteLine products for a product-specific comparison.
 
 Examples:
 
-- compare vendors
-- compare suppliers
-- which vendor is cheaper
-- which supplier has the lowest price
-- which vendor has the highest rating
+"Which vendor is cheapest for Banana Jack?"
 
-For price comparison:
+"Which supplier has the lowest price for Banana Jack?"
+
+"Who sells Banana Jack cheapest?"
+
+For these requests:
+
+entities.product = "Banana Jack"
+
+Use:
+
+QuoteLine
+
+fields:
+
+UnitPrice
+
+reasoning:
+
+COMPARE
+
+requiresComparison:
+
+true
+
+requiresReasoning:
+
+true
+
+If the user asks for vendor comparison without specifying
+a product, compare vendors using the available common products.
+
+Example:
+
+"Which vendor is cheapest?"
 
 Use QuoteLine.
 
-For vendor information:
+If the user asks for vendor-level information such as:
+
+- vendor email
+- vendor phone
+- vendor rating
+- vendor status
 
 Use Vendor.
+
+For product-specific price comparison, QuoteLine is sufficient
+because QuoteLine contains vendor, product, and price information.
 
 
 PROCUREMENT_ANALYSIS
@@ -499,7 +615,6 @@ Return:
   ]
 }
 
-
 User:
 Which vendor has the lowest price?
 
@@ -550,6 +665,50 @@ Return:
   ]
 }
 
+
+User:
+Which vendor is cheapest for Banana Jack?
+
+NLU:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
+}
+
+Return:
+
+{
+  "goal": "Find cheapest vendor for Banana Jack",
+  "intent": "COMPARE_VENDORS",
+  "reasoning": "COMPARE",
+  "entities": {
+    "product": "Banana Jack",
+    "vendor": "",
+    "quote": "",
+    "order": "",
+    "report": ""
+  },
+  "collections": [
+    "QuoteLine"
+  ],
+  "fields": [
+    "UnitPrice"
+  ],
+  "semanticSearch": false,
+  "requiresComparison": true,
+  "requiresReasoning": true,
+  "outputFormat": "TABLE",
+  "confidence": 0.98,
+  "retrievalPlan": [
+    {
+      "source": "firestore",
+      "collection": "QuoteLine",
+      "operation": "fetchDocument"
+    }
+  ]
+}
 
 User:
 Show all vendors.
