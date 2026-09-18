@@ -1,54 +1,138 @@
 import { analyzePrice } from "../priceAnalyzer";
 
-export function buildPriceMatrix(quotes: any[]) {
+function normalize(value: string = ""): string {
+  return String(value)
+    .replace(/Â/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+export function buildPriceMatrix(
+  masterQuote: any,
+  vendorQuotes: any[]
+) {
 
   const matrix: any[] = [];
 
-  quotes.forEach((quote) => {
+  const masterInfo =
+    masterQuote?.QuoteInfo?.[0];
 
-    const info = quote?.QuoteInfo?.[0];
+  const masterLines =
+    masterInfo?.Qlines || [];
 
-    console.log("QUOTE INFO:");
-console.log(JSON.stringify(info, null, 2));
 
-    if (!info) return;
+  vendorQuotes.forEach(
+    (quote: any) => {
 
-    const vendor =
-      info.VendorName ||
-      "Master Quote";
+      const vendorInfo =
+        quote?.QuoteInfo?.[0];
 
-    (info.Qlines || []).forEach((item: any) => {
+      if (!vendorInfo) {
+        return;
+      }
 
-      const analysis = analyzePrice(
-        item.ProductName,
-        Number(item.UnitPrice || 0),
-        Number(item.TargetPrice || 0)
+      const vendorName =
+        vendorInfo?.VendorName ||
+        "Unknown Vendor";
+
+      const vendorLines =
+        vendorInfo?.Qlines || [];
+
+
+      vendorLines.forEach(
+        (vendorLine: any) => {
+
+          /*
+           * Find corresponding Master product.
+           */
+
+          const masterLine =
+            masterLines.find(
+              (master: any) =>
+                normalize(
+                  master?.ProductName
+                ) ===
+                normalize(
+                  vendorLine?.ProductName
+                ) &&
+
+                normalize(
+                  master?.specValue
+                ) ===
+                normalize(
+                  vendorLine?.specValue
+                )
+            );
+
+
+          /*
+           * If vendor product is not in Master,
+           * it is not part of Master price matrix.
+           */
+
+          if (!masterLine) {
+            return;
+          }
+
+
+          const targetPrice =
+            Number(
+              masterLine?.TargetPrice || 0
+            );
+
+          const vendorPrice =
+            Number(
+              vendorLine?.UnitPrice || 0
+            );
+
+
+          const analysis =
+            analyzePrice(
+              vendorLine?.ProductName || "",
+              vendorPrice,
+              targetPrice
+            );
+
+
+          matrix.push({
+
+            vendor:
+              vendorName,
+
+            product:
+              vendorLine?.ProductName || "",
+
+            specification:
+              vendorLine?.specValue || "",
+
+            quantity:
+              Number(
+                vendorLine?.Quantity || 0
+              ),
+
+            targetPrice,
+
+            unitPrice:
+              vendorPrice,
+
+            percentage:
+              analysis.percentage,
+
+            category:
+              analysis.category,
+
+            remark:
+              analysis.remark
+
+          });
+
+        }
       );
 
-      matrix.push({
+    }
+  );
 
-        vendor,
-
-        product: item.ProductName,
-
-        quantity: Number(item.Quantity || 0),
-
-        unitPrice: Number(item.UnitPrice || 0),
-
-        targetPrice: Number(item.TargetPrice || 0),
-
-        category: analysis.category,
-
-        remark: analysis.remark,
-
-        percentage: analysis.percentage
-
-      });
-
-    });
-
-  });
 
   return matrix;
-
 }

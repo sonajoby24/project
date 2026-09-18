@@ -127,19 +127,25 @@ doc.text(
   autoTable(doc, {
     startY: 220,
     head: [["Metric", "Value"]],
-    body: [
-      ["Qty Match %", reportData.qtyMatchPercentage],
-      ["Price Match %", reportData.overallPriceMatchPercentage],
-      ["Missing Products", reportData.missingProductCount || 0],
-      ["Extra Products", reportData.extraProductCount || 0],
-      [
-        "Wrong Specs",
-        reportData.products?.filter(
-          (p: any) =>
-            p.specStatus === "Wrong Specification"
-        ).length,
-      ],
-    ],
+   body: [
+  ["Qty Match %", reportData.qtyMatchPercentage],
+  ["Price Match %", reportData.overallPriceMatchPercentage],
+  ["Missing Products", reportData.missingProductCount || 0],
+  ["Extra Products", reportData.extraProductCount || 0],
+ [
+  "Wrong Specs",
+  reportData.products?.filter(
+    (p: any) =>
+      p?.specificationMatch === false ||
+      String(
+        p?.specificationStatus ??
+        p?.specStatus ??
+        ""
+      ).trim().toLowerCase() ===
+        "specification mismatch"
+  ).length ?? 0,
+],
+],
   });
 
   autoTable(doc, {
@@ -252,15 +258,18 @@ doc.text(
             </p>
           </div>
 
-         <div className="bg-purple-700 p-5 rounded-xl">
-           <h3>Wrong Specs</h3>
-           <p className="text-3xl font-bold">
+       <div className="bg-purple-700 p-5 rounded-xl">
+  <h3>Wrong Specs</h3>
+  <p className="text-3xl font-bold">
     {
       reportData.products?.filter(
         (p: any) =>
-          p.specStatus ===
-          "Wrong Specification"
-      ).length
+          p?.specificationMatch === false ||
+          String(
+            p?.specificationStatus ?? ""
+          ).trim().toLowerCase() ===
+            "specification mismatch"
+      ).length ?? 0
     }
   </p>
 </div>
@@ -378,44 +387,175 @@ doc.text(
 </thead>
 
 <tbody>
-
   {reportData.products?.map(
     (item: any, index: number) => {
 
+      /*
+       * ============================================================
+       * SUPPORT BOTH REPORT TYPES
+       *
+       * MASTER REPORT:
+       *   cheapestVendor
+       *   cheapestPrice
+       *   vendors[]
+       *
+       * TRANSACTIONAL REPORT:
+       *   vendor
+       *   vendorName
+       *   addressedQty
+       *   vendorPrice
+       *   priceDifference
+       * ============================================================
+       */
+
+      const vendorName =
+        item.vendorName ??
+        item.vendor ??
+        item.bestVendorName ??
+        item.bestVendor ??
+        item.cheapestVendor ??
+        "";
+
+      /*
+       * Master reports store vendor information inside vendors[].
+       * Transactional reports already have addressedQty directly.
+       */
+
+      const matchedVendor =
+        Array.isArray(item.vendors)
+          ? item.vendors.find(
+              (v: any) => {
+
+                const currentVendor =
+                  v?.vendorName ??
+                  v?.vendor ??
+                  "";
+
+                return (
+                  String(currentVendor).trim() ===
+                  String(vendorName).trim()
+                );
+              }
+            )
+          : null;
+
+      /*
+       * Addressed quantity.
+       *
+       * Transactional:
+       *   item.addressedQty
+       *
+       * Master:
+       *   matchedVendor.quantity
+       *   or matchedVendor.addressedQty
+       */
+
+      const rawAddressedQty =
+        item.addressedQty ??
+        item.vendorAddressedQty ??
+        item.vendorQuantity ??
+        matchedVendor?.addressedQty ??
+        matchedVendor?.quantity ??
+        null;
+
       const hasVendor =
-        !!item.cheapestVendor;
+        String(vendorName).trim().length > 0;
 
       const addressedQty =
-        hasVendor
-          ? Number(
-              item.vendors?.find(
-                (v: any) =>
-                  v.vendor ===
-                  item.cheapestVendor
-              )?.quantity ??
-              item.requestedQty ??
-              0
-            )
-          : 0;
+        rawAddressedQty !== null &&
+        rawAddressedQty !== undefined
+          ? Number(rawAddressedQty)
+          : null;
+
+      /*
+       * Vendor price.
+       *
+       * Transactional:
+       *   item.vendorPrice
+       *   item.vendorUnitPrice
+       *
+       * Master:
+       *   item.cheapestPrice
+       *   matchedVendor.unitPrice
+       */
+
+      const rawVendorPrice =
+        item.vendorPrice ??
+        item.vendorUnitPrice ??
+        item.cheapestPrice ??
+        matchedVendor?.unitPrice ??
+        matchedVendor?.UnitPrice ??
+        null;
 
       const vendorPrice =
-        hasVendor
-          ? Number(
-              item.cheapestPrice || 0
-            )
-          : 0;
+        rawVendorPrice !== null &&
+        rawVendorPrice !== undefined
+          ? Number(rawVendorPrice)
+          : null;
+
+      /*
+       * Target price.
+       */
+
+      const rawTargetPrice =
+        item.targetPrice ??
+        item.TargetPrice ??
+        null;
 
       const targetPrice =
-        Number(
-          item.targetPrice || 0
-        );
+        rawTargetPrice !== null &&
+        rawTargetPrice !== undefined
+          ? Number(rawTargetPrice)
+          : null;
+
+      /*
+       * Price difference.
+       *
+       * Prefer the deterministic backend value.
+       * Only calculate it if the backend did not provide one.
+       */
+
+      const rawPriceDifference =
+        item.priceDifference ??
+        item.priceDiff ??
+        null;
 
       const priceDifference =
-        vendorPrice -
-        targetPrice;
+        rawPriceDifference !== null &&
+        rawPriceDifference !== undefined
+          ? Number(rawPriceDifference)
+          : (
+              vendorPrice !== null &&
+              targetPrice !== null
+                ? vendorPrice - targetPrice
+                : null
+            );
+
+      /*
+       * Specification status.
+       *
+       * Transactional report:
+       *   specificationStatus
+       *
+       * Master report:
+       *   specStatus
+       */
+
+      const specificationStatus =
+        item.specificationStatus ??
+        item.specStatus ??
+        item.specificationMatch ??
+        "";
+
+      /*
+       * Recommendation.
+       */
+
+      const recommendation =
+        item.recommendation ??
+        "Not Available";
 
       return (
-
         <tr
           key={index}
           className="border-b border-slate-800"
@@ -424,40 +564,44 @@ doc.text(
           {/* PRODUCT */}
 
           <td className="p-2">
-            {item.productName}
+            {item.productName ?? "N/A"}
           </td>
 
           {/* SPECIFICATION */}
 
           <td className="p-2 text-sm text-slate-300">
-            {item.specification || "NA"}
+            {item.specification ??
+              item.specValue ??
+              "NA"}
           </td>
 
           {/* REQUESTED QTY */}
 
           <td className="p-2">
-            {Number(
-              item.requestedQty || 0
-            )}
+            {item.requestedQty ??
+              item.quantity ??
+              0}
           </td>
 
           {/* TARGET PRICE */}
 
           <td className="p-2">
-            ${targetPrice.toFixed(2)}
+            {targetPrice !== null
+              ? `$${targetPrice.toFixed(2)}`
+              : "NA"}
           </td>
 
           {/* BEST VENDOR */}
 
           <td className="p-2 font-medium">
 
-            {hasVendor
-              ? item.cheapestVendor
-              : (
-                <span className="text-red-400">
-                  No vendor quoted
-                </span>
-              )}
+            {hasVendor ? (
+              vendorName
+            ) : (
+              <span className="text-red-400">
+                No vendor quoted
+              </span>
+            )}
 
           </td>
 
@@ -465,7 +609,8 @@ doc.text(
 
           <td className="p-2">
 
-            {hasVendor
+            {hasVendor &&
+            addressedQty !== null
               ? addressedQty
               : "NA"}
 
@@ -475,7 +620,8 @@ doc.text(
 
           <td className="p-2">
 
-            {hasVendor
+            {hasVendor &&
+            vendorPrice !== null
               ? `$${vendorPrice.toFixed(2)}`
               : "NA"}
 
@@ -485,7 +631,8 @@ doc.text(
 
           <td className="p-2">
 
-            {hasVendor ? (
+            {hasVendor &&
+            priceDifference !== null ? (
 
               <span
                 className={
@@ -513,17 +660,23 @@ doc.text(
 
           <td className="p-2">
 
-            {item.specStatus ===
+            {specificationStatus ===
             "Specification Match" ? (
 
               <span className="text-green-400">
                 Match
               </span>
 
-            ) : (
+            ) : specificationStatus ? (
 
               <span className="text-red-400">
-                {item.specStatus || "NA"}
+                {specificationStatus}
+              </span>
+
+            ) : (
+
+              <span className="text-slate-400">
+                NA
               </span>
 
             )}
@@ -536,30 +689,26 @@ doc.text(
 
             <span
               className={`px-3 py-1 rounded text-white ${
-                item.recommendation ===
+                recommendation ===
                 "Recommended"
                   ? "bg-green-600"
-                  : item.recommendation ===
+                  : recommendation ===
                     "Above Target"
                   ? "bg-yellow-600"
                   : "bg-red-600"
               }`}
             >
-
-              {item.recommendation}
-
+              {recommendation}
             </span>
 
           </td>
 
         </tr>
-
       );
-
     }
   )}
-
 </tbody>
+
 </table>
       </div>
       

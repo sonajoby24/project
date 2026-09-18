@@ -1,631 +1,951 @@
 import { NextResponse } from "next/server";
+
 import { adminDb } from "@/lib/firebase-admin";
-import { generateMasterQuoteReport }
-from "@/lib/ai/procurement/masterQuoteReport";
-import { runProcurementAgent } from "@/lib/ai/procurement/procurementAgent";
 
-function normalize(value: string = "") {
+import {
+  generateMasterQuoteReport,
+} from "@/lib/ai/procurement/masterQuoteReport";
 
-  return value
+import {
+  generateTransactionalQuoteReport,
+} from "@/lib/ai/procurement/transactionalQuoteReport";
+
+import {
+  runProcurementAgent,
+} from "@/lib/ai/procurement/procurementAgent";
+
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+function normalize(value: any = ""): string {
+  return String(value)
     .replace(/Â/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
-
 }
 
-export async function POST(req: Request) {
-  try {
-    const { quoteId,quoteNumber } = await req.json();
 
-    // -------------------------------
-    // Find Quote
-    // -------------------------------
-
-    const quoteSnapshot = await adminDb
-      .collection("quotes")
-      .get();
-
-    let vendorQuote: any = null;
-    
-    console.log("INPUT QUOTE ID:", quoteId);
-    console.log("INPUT QUOTE NUMBER:", quoteNumber);
-
-// Find the transactional/vendor quote
-for (const doc of quoteSnapshot.docs) {
-
-  const data = doc.data();
-
-  const actualQuoteId =
-    data?.QuoteInfo?.[0]?.QuoteId;
-
-  const actualQuoteNumber =
-    String(data?.QuoteInfo?.[0]?.QuoteNumber || "");
-  
-  console.log(
-  "Checking:",
-  actualQuoteId,
-  actualQuoteNumber,
-  doc.id
-);
-
-  if (
-    actualQuoteId === quoteId ||
-    actualQuoteNumber === String(quoteNumber)
-  ) {
-
-    console.log("VENDOR QUOTE FOUND:", doc.id);
-
-    vendorQuote = data;
-
-    break;
-  }
-}
-if (!vendorQuote) {
-  return NextResponse.json({
-    success: false,
-    message: "Quote not found",
-  });
+function normalizeId(value: any): string {
+  return String(value || "").trim();
 }
 
-const parentQuoteId =
-  vendorQuote?.QuoteInfo?.[0]?.ParentQuoteID;
 
-const vendorType =
-  vendorQuote?.QuoteInfo?.[0]?.QuoteType;
+/*
+ * Get Parent Quote ID.
+ *
+ * Transactional quotes may contain the parent Master Quote ID
+ * using slightly different field names.
+ */
 
-let quoteData: any = vendorQuote;
-
-console.log("QUOTE TYPE:", vendorType);
-
-if (parentQuoteId) {
-
-  for (const doc of quoteSnapshot.docs) {
-
-    const data = doc.data();
-
-    const actualQuoteId =
-      data?.QuoteInfo?.[0]?.QuoteId;
-
-    if (actualQuoteId === parentQuoteId) {
-
-      console.log("MASTER QUOTE FOUND:", doc.id);
-
-      quoteData = data;
-
-      break;
-    }
-  }
-}
-
-if (!vendorQuote) {
-  return NextResponse.json({
-    success: false,
-    message: "Quote not found",
-  });
-}
-
-    if (!quoteData) {
-      return NextResponse.json({
-        success: false,
-        message: "Quote not found",
-      });
-    }
-const masterInfo =
-  quoteData?.QuoteInfo?.[0];
-
-const vendorInfo =
-  vendorQuote?.QuoteInfo?.[0];
-
-const masterLines =
-  masterInfo?.Qlines || [];
-
-const vendorLines =
-  vendorInfo?.Qlines || [];
-// ------------------------------------
-// Build Procurement Analysis Quotes
-// ------------------------------------
-
-const analysisQuotes: any[] = [];
-
-const masterQuoteId =
-  quoteData?.QuoteInfo?.[0]?.QuoteId;
-
-// Always include the master quote
-analysisQuotes.push(quoteData);
-
-// Add every vendor quote belonging to this master
-quoteSnapshot.docs.forEach((doc) => {
-
-  const data = doc.data();
-
-  const info = data?.QuoteInfo?.[0];
-
-  if (!info) return;
-
-  if (info.ParentQuoteID === masterQuoteId) {
-
-    analysisQuotes.push(data);
-
-  }
-
-});
-
-console.log(
-  "===================================="
-);
-
-console.log(
-  "SELECTED QUOTE:",
-  vendorInfo?.QuoteNumber
-);
-
-console.log(
-  "SELECTED QUOTE TYPE:",
-  vendorType
-);
-
-console.log(
-  "MASTER QUOTE:",
-  masterInfo?.QuoteNumber
-);
-
-console.log(
-  "MASTER QUOTE ID:",
-  masterQuoteId
-);
-
-console.log(
-  "VENDOR QUOTES FOUND:",
-  analysisQuotes
-    .filter(
-      (q: any) =>
-        q?.QuoteInfo?.[0]?.QuoteType !==
-        "Master"
-    )
-    .map(
-      (q: any) => ({
-        quoteNumber:
-          q?.QuoteInfo?.[0]?.QuoteNumber,
-
-        vendor:
-          q?.QuoteInfo?.[0]?.VendorName,
-
-        quoteId:
-          q?.QuoteInfo?.[0]?.QuoteId,
-
-        parentQuoteId:
-          q?.QuoteInfo?.[0]?.ParentQuoteID,
-
-        productCount:
-          q?.QuoteInfo?.[0]?.Qlines?.length
-      })
-    )
-);
-
-console.log(
-  "TOTAL ANALYSIS QUOTES:",
-  analysisQuotes.length
-);
-
-console.log(
-  "===================================="
-);
-// Master Quote → compare against ALL vendors
-let procurement: any;
-
-procurement = generateMasterQuoteReport(
-  analysisQuotes,
-  vendorQuote
-);
-
-console.log(
-  "PROCUREMENT ANALYSIS",
-  procurement
-);
-
-// ------------------------------------
-// AI PROCUREMENT ANALYSIS
-// ------------------------------------
-let aiAnalysis = null;
-
-try {
-  aiAnalysis = await runProcurementAgent(
-    procurement
+function getParentQuoteId(info: any): string {
+  return normalizeId(
+    info?.ParentQuoteID ||
+    info?.ParentQuoteId ||
+    info?.parentQuoteId ||
+    ""
   );
+}
 
-  console.log(
-    "AI PROCUREMENT ANALYSIS:",
-    aiAnalysis
+
+/*
+ * Get Quote Number.
+ */
+
+function getQuoteNumber(info: any): string {
+  return normalizeId(
+    info?.QuoteNumber ||
+    info?.quoteNumber ||
+    ""
   );
+}
 
-} catch (error) {
 
-  console.error(
-    "AI PROCUREMENT ANALYSIS ERROR:",
-    error
+/*
+ * Get Quote ID.
+ */
+
+function getQuoteId(info: any): string {
+  return normalizeId(
+    info?.QuoteId ||
+    info?.quoteId ||
+    ""
   );
+}
 
-  // Keep the deterministic procurement evidence
-  // even when Gemini fails.
-  aiAnalysis = {
-    executiveRecommendation:
-      "AI analysis unavailable. Procurement evidence is still available.",
 
-    overallAssessment:
-      "The procurement analysis was calculated successfully, but AI reasoning could not be generated.",
+function normalizeQuoteForReport(data: any): any {
+  const info = data?.QuoteInfo?.[0] || {};
 
-    recommendedVendors: [],
+  const qlines = Array.isArray(info?.Qlines)
+    ? info.Qlines.map((line: any) => ({
+        ...line,
 
-    productRecommendations: [],
+        ProductName:
+          line?.ProductName ??
+          line?.productName ??
+          "",
 
-    risks: [
-      "AI analysis unavailable because the Gemini service could not complete the request."
+        Quantity:
+          line?.Quantity ??
+          line?.quantity ??
+          "",
+
+        UnitPrice:
+          line?.UnitPrice ??
+          line?.unitPrice ??
+          line?.QuotedPrice ??
+          line?.quotedPrice ??
+          line?.Price ??
+          line?.price ??
+          "",
+
+        QuotedPrice:
+          line?.QuotedPrice ??
+          line?.quotedPrice ??
+          line?.UnitPrice ??
+          line?.unitPrice ??
+          line?.Price ??
+          line?.price ??
+          "",
+
+        specValue:
+          line?.specValue ??
+          line?.SpecValue ??
+          line?.Specification ??
+          line?.specification ??
+          "",
+      }))
+    : [];
+
+  return {
+    ...data,
+    QuoteInfo: [
+      {
+        ...info,
+        Qlines: qlines,
+      },
     ],
-
-    opportunities: [],
-
-    insights: [],
-
-    procurementActions: [
-      "Review the deterministic procurement analysis before making purchasing decisions."
-    ]
   };
 }
 
-return NextResponse.json({
-  success: true,
+/* ============================================================
+   POST /api/report
+   ============================================================ */
 
-  report: {
-    ...procurement,
+export async function POST(req: Request) {
 
-    aiAnalysis
-  }
-});
+  try {
 
-const missingProducts = masterLines.filter((master: any) => {
+    /* ==========================================================
+       READ REQUEST
+       ========================================================== */
 
-  const found = vendorLines.find((vendor: any) =>
+    const body = await req.json();
 
-    normalize(vendor.ProductName) === normalize(master.ProductName) &&
-    normalize(vendor.specValue) === normalize(master.specValue)
+    const {
+      quoteId,
+      quoteNumber,
+    } = body;
 
-  );
 
-  return !found;
+    console.log(
+      "===================================="
+    );
 
-});
+    console.log(
+      "REPORT REQUEST"
+    );
 
-const extraProducts = vendorLines.filter((vendor: any) => {
+    console.log(
+      "INPUT QUOTE ID:",
+      quoteId
+    );
 
-  const found = masterLines.find((master: any) =>
+    console.log(
+      "INPUT QUOTE NUMBER:",
+      quoteNumber
+    );
 
-    normalize(master.ProductName) === normalize(vendor.ProductName) &&
-    normalize(master.specValue) === normalize(vendor.specValue)
 
-  );
+    /* ==========================================================
+       VALIDATE INPUT
+       ========================================================== */
 
-  return !found;
+    if (!quoteId && !quoteNumber) {
 
-});
+      return NextResponse.json(
+        {
+          success: false,
+          message: "quoteId or quoteNumber is required",
+        },
+        {
+          status: 400,
+        }
+      );
 
-  console.log(
-  "MASTER:",
-  masterLines.length
+    }
+
+
+    /* ==========================================================
+       GET ALL QUOTES
+       ========================================================== */
+
+   /* ==========================================================
+   GET ALL QUOTES FROM BOTH COLLECTIONS
+   ========================================================== */
+
+const quotesSnapshot =
+  await adminDb
+    .collection("quotes")
+    .get();
+
+const quotessSnapshot =
+  await adminDb
+    .collection("quotess")
+    .get();
+
+const allQuoteDocs = [
+  ...quotesSnapshot.docs,
+  ...quotessSnapshot.docs,
+];
+
+
+console.log(
+  "QUOTES COLLECTION:",
+  quotesSnapshot.size
 );
 
 console.log(
-  "VENDOR:",
-  vendorLines.length
-);
-
-    console.log(
-  "FIRST MASTER LINE:",
-  JSON.stringify(masterLines[0], null, 2)
+  "QUOTESS COLLECTION:",
+  quotessSnapshot.size
 );
 
 console.log(
-  "MASTER LINE 18:",
-  JSON.stringify(masterLines[18], null, 2)
+  "TOTAL QUOTES FOUND:",
+  allQuoteDocs.length
 );
 
+
+    /* ==========================================================
+       FIND SELECTED QUOTE
+       ========================================================== */
+
+    let selectedQuote: any = null;
+
+    let selectedQuoteDocId = "";
+
+
+   for (const doc of allQuoteDocs) {
+
+     const rawData = doc.data();
+const data = normalizeQuoteForReport(rawData);
+
+      const info = data?.QuoteInfo?.[0];
+
+      if (!info) {
+        continue;
+      }
+
+
+      const actualQuoteId =
+        getQuoteId(info);
+
+      const actualQuoteNumber =
+        getQuoteNumber(info);
+
+
+      const requestedQuoteId =
+        normalizeId(quoteId);
+
+      const requestedQuoteNumber =
+        normalizeId(quoteNumber);
+
+
+      const matchesQuoteId =
+        Boolean(requestedQuoteId) &&
+        actualQuoteId === requestedQuoteId;
+
+
+      const matchesQuoteNumber =
+        Boolean(requestedQuoteNumber) &&
+        actualQuoteNumber === requestedQuoteNumber;
+
+
+      if (
+        matchesQuoteId ||
+        matchesQuoteNumber
+      ) {
+
+        selectedQuote = data;
+
+        selectedQuoteDocId = doc.id;
+
+
+        console.log(
+          "SELECTED QUOTE FOUND:",
+          doc.id
+        );
+
+        break;
+
+      }
+
+    }
+
+
+    /* ==========================================================
+       QUOTE NOT FOUND
+       ========================================================== */
+
+    if (!selectedQuote) {
+
+      console.error(
+        "QUOTE NOT FOUND:",
+        {
+          quoteId,
+          quoteNumber,
+        }
+      );
+
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Quote not found",
+        },
+        {
+          status: 404,
+        }
+      );
+
+    }
+
+
+    /* ==========================================================
+       SELECTED QUOTE INFORMATION
+       ========================================================== */
+
+    const selectedInfo =
+      selectedQuote?.QuoteInfo?.[0] || {};
+
+
+    const quoteType =
+      normalize(
+        selectedInfo?.QuoteType
+      );
+
+
+    const selectedQuoteId =
+      getQuoteId(selectedInfo);
+
+    const selectedQuoteNumber =
+      getQuoteNumber(selectedInfo);
+
+
     console.log(
-      "MASTER INFO:",
+      "SELECTED QUOTE DOC ID:",
+      selectedQuoteDocId
+    );
+
+    console.log(
+      "SELECTED QUOTE ID:",
+      selectedQuoteId
+    );
+
+    console.log(
+      "SELECTED QUOTE NUMBER:",
+      selectedQuoteNumber
+    );
+
+    console.log(
+      "SELECTED QUOTE TYPE:",
+      selectedInfo?.QuoteType
+    );
+
+    console.log(
+      "SELECTED VENDOR:",
+      selectedInfo?.VendorName
+    );
+
+
+    /* ==========================================================
+       FIND MASTER QUOTE
+       ========================================================== */
+
+    let masterQuote: any = null;
+
+
+    /* ==========================================================
+       CASE 1:
+       SELECTED QUOTE IS MASTER
+       ========================================================== */
+
+    if (quoteType === "master") {
+
+      masterQuote = selectedQuote;
+
+
+      console.log(
+        "SELECTED QUOTE IS MASTER QUOTE"
+      );
+
+    }
+
+
+    /* ==========================================================
+       CASE 2:
+       SELECTED QUOTE IS TRANSACTIONAL
+       ========================================================== */
+
+    else {
+
+      const parentQuoteId =
+        getParentQuoteId(
+          selectedInfo
+        );
+
+
+      console.log(
+        "PARENT QUOTE ID:",
+        parentQuoteId
+      );
+
+
+      if (parentQuoteId) {
+
+       for (const doc of allQuoteDocs) {
+
+         const rawData = doc.data();
+const data = normalizeQuoteForReport(rawData);
+
+          const info =
+            data?.QuoteInfo?.[0];
+
+          if (!info) {
+            continue;
+          }
+
+
+          const actualMasterQuoteId =
+            getQuoteId(info);
+
+
+          const parentQuoteType =
+            normalize(
+              info?.QuoteType
+            );
+
+
+          if (
+            actualMasterQuoteId ===
+              parentQuoteId &&
+            parentQuoteType === "master"
+          ) {
+
+            masterQuote = data;
+
+
+            console.log(
+              "MASTER QUOTE FOUND:",
+              doc.id
+            );
+
+            break;
+
+          }
+
+        }
+
+      }
+
+    }
+
+
+    /* ==========================================================
+       MASTER QUOTE NOT FOUND
+       ========================================================== */
+
+    if (!masterQuote) {
+
+      console.error(
+        "MASTER QUOTE NOT FOUND"
+      );
+
+
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Parent Master Quote not found for this quote.",
+        },
+        {
+          status: 404,
+        }
+      );
+
+    }
+
+
+    /* ==========================================================
+       MASTER QUOTE INFORMATION
+       ========================================================== */
+
+    const masterInfo =
+      masterQuote?.QuoteInfo?.[0] || {};
+
+
+    const masterQuoteId =
+      getQuoteId(masterInfo);
+
+    const masterQuoteNumber =
+      getQuoteNumber(masterInfo);
+
+
+    console.log(
+      "MASTER QUOTE NUMBER:",
+      masterQuoteNumber
+    );
+
+    console.log(
+      "MASTER QUOTE ID:",
+      masterQuoteId
+    );
+
+    console.log(
+      "MASTER QUOTE TYPE:",
+      masterInfo?.QuoteType
+    );
+
+
+    /* ==========================================================
+       GENERATE PROCUREMENT REPORT
+       ========================================================== */
+
+    let procurement: any;
+
+
+    /* ==========================================================
+       MASTER QUOTE REPORT
+       ========================================================== */
+
+    if (quoteType === "master") {
+
+      console.log(
+        "===================================="
+      );
+
+      console.log(
+        "GENERATING MASTER QUOTE REPORT"
+      );
+
+      console.log(
+        "===================================="
+      );
+
+
+      /*
+       * Start with the selected Master quote.
+       */
+
+      const analysisQuotes: any[] = [
+        masterQuote,
+      ];
+
+
+      /*
+       * Keep track of vendor quotes already added.
+       */
+
+      const addedQuoteIds =
+        new Set<string>();
+
+
+      /*
+       * Add every transactional quote that belongs
+       * to this Master quote.
+       */
+
+    for (const doc of allQuoteDocs) {
+
+       const rawData = doc.data();
+const data = normalizeQuoteForReport(rawData);
+
+        const info =
+          data?.QuoteInfo?.[0];
+
+        if (!info) {
+          continue;
+        }
+
+
+        /*
+         * Ignore Master quotes.
+         */
+
+        if (
+          normalize(
+            info?.QuoteType
+          ) === "master"
+        ) {
+          continue;
+        }
+
+
+        const parentQuoteId =
+          getParentQuoteId(info);
+
+
+        /*
+         * Only include vendor quotes belonging
+         * to the selected Master quote.
+         */
+
+        if (
+          parentQuoteId !==
+          masterQuoteId
+        ) {
+          continue;
+        }
+
+
+        const currentQuoteId =
+          getQuoteId(info);
+
+
+        /*
+         * Prevent duplicate vendor quotes.
+         */
+
+        if (
+          currentQuoteId &&
+          addedQuoteIds.has(currentQuoteId)
+        ) {
+          continue;
+        }
+
+
+        if (currentQuoteId) {
+
+          addedQuoteIds.add(
+            currentQuoteId
+          );
+
+        }
+
+
+        analysisQuotes.push(
+          data
+        );
+
+      }
+
+
+      console.log(
+        "MASTER QUOTE:",
+        masterQuoteNumber
+      );
+
+      console.log(
+        "MASTER QUOTE ID:",
+        masterQuoteId
+      );
+
+      console.log(
+        "VENDOR QUOTES FOUND:",
+        analysisQuotes
+          .filter(
+            (quote: any) =>
+              normalize(
+                quote
+                  ?.QuoteInfo?.[0]
+                  ?.QuoteType
+              ) !== "master"
+          )
+          .map(
+            (quote: any) => {
+
+              const info =
+                quote?.QuoteInfo?.[0] || {};
+
+
+              return {
+
+                quoteNumber:
+                  getQuoteNumber(info),
+
+                vendor:
+                  info?.VendorName,
+
+                quoteId:
+                  getQuoteId(info),
+
+                parentQuoteId:
+                  getParentQuoteId(info),
+
+                productCount:
+                  Array.isArray(
+                    info?.Qlines
+                  )
+                    ? info.Qlines.length
+                    : 0,
+
+              };
+
+            }
+          )
+      );
+
+
+      /*
+       * Generate Master Quote report.
+       *
+       * This report compares the Master quote
+       * against ALL transactional/vendor quotes
+       * belonging to that Master.
+       */
+
+      procurement =
+        generateMasterQuoteReport(
+          analysisQuotes,
+          masterQuote
+        );
+
+    }
+
+
+    /* ==========================================================
+       TRANSACTIONAL QUOTE REPORT
+       ========================================================== */
+
+    else {
+
+      console.log(
+        "===================================="
+      );
+
+      console.log(
+        "GENERATING TRANSACTIONAL QUOTE REPORT"
+      );
+
+      console.log(
+        "===================================="
+      );
+
+
+      /*
+       * Compare the selected vendor quote
+       * against its parent Master quote.
+       */
+
+      procurement =
+        generateTransactionalQuoteReport(
+          masterQuote,
+          selectedQuote
+        );
+
+    }
+
+
+    /* ==========================================================
+       LOG PROCUREMENT REPORT
+       ========================================================== */
+
+    console.log(
+      "===================================="
+    );
+
+    console.log(
+      "PROCUREMENT REPORT GENERATED"
+    );
+
+    console.log(
+      "===================================="
+    );
+
+
+    console.log(
       JSON.stringify(
-        masterInfo,
+        procurement,
         null,
         2
       )
     );
 
-      
 
-    // -------------------------------
-    // Build Analysis Rows
-    // -------------------------------
+    /* ==========================================================
+       GEMINI PROCUREMENT AI ANALYSIS
+       ========================================================== */
 
-    const analysisProducts: any[] = masterLines.map(
-      (item: any) => {
-    const vendorMatch =
-  vendorLines.find((vendor: any) => {
+    let aiAnalysis: any = null;
 
-    return (
 
-      normalize(vendor.ProductName) ===
-      normalize(item.ProductName)
+    try {
 
-      &&
+      console.log(
+        "===================================="
+      );
 
-      normalize(vendor.specValue) ===
-      normalize(item.specValue)
+      console.log(
+        "STARTING GEMINI PROCUREMENT ANALYSIS"
+      );
 
-    );
+      console.log(
+        "===================================="
+      );
 
-  }) || null;
 
-const specMatched = !!
-vendorMatch;
- 
-        const requestedQty =
-          Number(
-            item.Quantity ||
-              0
-          );
+      /*
+       * Send the deterministic report to the
+       * Procurement Agent.
+       */
 
-        const addressedQty =
-          Number(
-            vendorMatch?.Quantity || 0
-          );
+      aiAnalysis =
+        await runProcurementAgent(
+          procurement
+        );
 
-        const targetPrice =
-          Number(
-            item.TargetPrice ||
-              0
-          );
 
-        const vendorPrice =
-          Number(
-            vendorMatch?.UnitPrice || 0
-          );
+      console.log(
+        "===================================="
+      );
 
-        const priceDifference =
-          (
-            vendorPrice -
-            targetPrice
-          ).toFixed(2);
+      console.log(
+        "AI PROCUREMENT ANALYSIS SUCCESS"
+      );
 
-        const qtyMatched =
-          requestedQty ===
-          addressedQty;
+      console.log(
+        "===================================="
+      );
 
-        const priceMatched =
-          vendorPrice <=
-          targetPrice;
 
-let recommendation = "Not Recommended";
+      console.log(
+        JSON.stringify(
+          aiAnalysis,
+          null,
+          2
+        )
+      );
 
-if (vendorMatch) {
+    } catch (error) {
 
-    if (qtyMatched && priceMatched) {
+      console.error(
+        "===================================="
+      );
 
-        recommendation = "Recommended";
+      console.error(
+        "AI PROCUREMENT ANALYSIS ERROR"
+      );
 
-    } else if (qtyMatched) {
+      console.error(
+        error
+      );
 
-        recommendation = "Qty Match";
+      console.error(
+        "===================================="
+      );
+
+
+      /*
+       * The deterministic report is still returned
+       * if Gemini fails.
+       */
+
+      aiAnalysis = {
+
+        executiveRecommendation:
+          "AI analysis unavailable. The procurement report was generated using deterministic procurement calculations.",
+
+        overallAssessment:
+          "The procurement data and comparison calculations are available, but Gemini could not generate the AI analysis.",
+
+        recommendedVendors: [],
+
+        productRecommendations: [],
+
+        risks: [
+          "AI analysis unavailable because the AI service could not generate the procurement analysis.",
+        ],
+
+        opportunities: [],
+
+        insights: [],
+
+        procurementActions: [
+          "Review the deterministic procurement report before making purchasing decisions.",
+        ],
+
+      };
 
     }
 
-}
 
-        if (
-          qtyMatched &&
-          priceMatched
-        ) {
-          recommendation =
-            "Recommended";
-        } else if (
-          qtyMatched
-        ) {
-          recommendation =
-            "Qty Match";
-        } else {
-          recommendation =
-            "Not Recommended";
-        }
+    /* ==========================================================
+       FINAL REPORT
+       ========================================================== */
 
-       return {
-         productName:
-           `${item.ProductName} (${item.specValue || "NA"})`,
-          
-          specMatched,
+    const finalReport = {
 
-         specStatus:
+      ...procurement,
 
-!vendorMatch
-  ? "Missing Product"
-  : specMatched
-      ? "Specification Match"
-      : "Wrong Specification",
+      aiAnalysis,
 
-          specValue:
-            vendorMatch?.specValue || 
-            item.specValue || "",
+    };
 
-          requestedQty,
 
-          addressedQty,
+    console.log(
+      "===================================="
+    );
 
-          targetPrice,
+    console.log(
+      "FINAL REPORT RESPONSE READY"
+    );
 
-          vendorPrice,
+    console.log(
+      "===================================="
+    );
 
-          priceDifference,
 
-          recommendation,
-remarks:
+    return NextResponse.json({
 
-!vendorMatch
-  ? "Not Quoted"
-  : qtyMatched
-      ? "Qty Match"
-      : "Qty Mismatch",
-        };
+      success: true,
+
+      report:
+        finalReport,
+
+    });
+
+  } catch (error) {
+
+    console.error(
+      "===================================="
+    );
+
+    console.error(
+      "REPORT API ERROR"
+    );
+
+    console.error(
+      error
+    );
+
+    console.error(
+      "===================================="
+    );
+
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Server Error",
+      },
+      {
+        status: 500,
       }
     );
 
-    // -------------------------------
-    // Summary Metrics
-    // -------------------------------
-
-    let totalAmount = 0;
-
-    vendorLines.forEach((item: any) => {
-      totalAmount +=
-        Number(
-          item.UnitPrice || 0
-        ) *
-        Number(
-          item.Quantity || 0
-        );
-    });
-
-    totalAmount = Number(
-      totalAmount.toFixed(2)
-    );
-
-    const qtyMatchedCount =
-      analysisProducts.filter(
-        (p: any) =>
-          p.requestedQty ===
-          p.addressedQty
-      ).length;
-
-    const qtyMatchPercentage =
-      analysisProducts.length > 0
-        ? Math.round(
-            (qtyMatchedCount /
-              analysisProducts.length) *
-              100
-          )
-        : 0;
-// Only consider products that matched quantity
-const qtyMatchedProducts = analysisProducts.filter(
-  (p: any) =>
-    p.requestedQty === p.addressedQty
-);
-
-// From those products, check price
-const priceMatchedCount = qtyMatchedProducts.filter(
-  (p: any) =>
-    p.vendorPrice <= p.targetPrice
-).length;
-
-// Pricing compliance is calculated only among quantity matched products
-const overallPriceMatchPercentage =
-  analysisProducts.length > 0
-    ? Math.round(
-        (priceMatchedCount /
-          analysisProducts.length) *
-          100
-      )
-    : 0;
-
-const insights = [
-  `${qtyMatchedCount} of ${analysisProducts.length} products matched requested quantity.`,
-  `${priceMatchedCount} of ${qtyMatchedCount} quantity matched products met target pricing.`,
-  `Overall quantity compliance: ${qtyMatchPercentage}%`,
-  `Overall pricing compliance: ${overallPriceMatchPercentage}%`,
-];
-
-    let recommendationSummary =
-      "";
-
-    if (
-      qtyMatchPercentage ===
-        100 &&
-      overallPriceMatchPercentage ===
-        100
-    ) {
-      recommendationSummary =
-        "All products satisfy quantity and pricing requirements. This vendor quote is recommended for approval.";
-    } else if (
-      qtyMatchPercentage >=
-        80 &&
-      overallPriceMatchPercentage >=
-        80
-    ) {
-      recommendationSummary =
-        "Most products satisfy procurement requirements. Manual review is recommended before approval.";
-    } else {
-      recommendationSummary =
-        "Multiple quantity or pricing mismatches were detected. This vendor quote is not recommended.";
-    }
-
-    return NextResponse.json({
-      success: true,
-      report: {
-        inputQuoteId:
-          quoteId,
-
-        recommendationSummary,
-
-        parentQuoteId:
-          vendorInfo?.ParentQuoteID ||
-          "",
-
-        quoteId:
-          vendorInfo?.QuoteId ||
-          "",
-
-        quoteName:
-          vendorInfo?.QuoteName ||
-          "",
-
-        quoteNumber:
-          vendorInfo?.QuoteNumber ||
-          "",
-
-        quoteType:
-          vendorInfo?.QuoteType ||
-          "",
-
-        totalProducts:
-          masterLines.length,
-
-        totalAmount,
-
-         qtyMatchPercentage,
-
-        overallPriceMatchPercentage,
-
-         missingProductCount:
-           missingProducts.length,
-
-        extraProductCount:
-          extraProducts.length,
-
-missingProducts: missingProducts.map((p: any) => ({
-    productName: p.ProductName,
-    specValue: p.specValue
-})),
-extraProducts: extraProducts.map((p: any) => ({
-    productName: p.ProductName,
-    specValue: p.specValue
-})),
-
-        insights,
-
-        products:
-          analysisProducts,
-      },
-    });
-  } catch (error) {
-    console.error(error);
-
-    return NextResponse.json({
-      success: false,
-      message: "Server Error",
-    });
   }
+
 }

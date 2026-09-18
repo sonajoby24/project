@@ -1,9 +1,13 @@
 import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL:
+    "https://generativelanguage.googleapis.com/v1beta/openai/",
+  apiKey: process.env.GEMINI_API_KEY,
 });
+
+const GEMINI_MODEL =
+  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 export type Intent =
   | "PRODUCT_SEARCH"
@@ -26,14 +30,146 @@ export interface NLUResult {
   fields: string[];
 }
 
+const VALID_INTENTS: Intent[] = [
+  "PRODUCT_SEARCH",
+  "VENDOR_SEARCH",
+  "QUOTE_SEARCH",
+  "ORDER_SEARCH",
+  "COMPARE_VENDORS",
+  "PROCUREMENT_ANALYSIS",
+  "SHOW_ALL_PRODUCTS",
+  "SHOW_ALL_VENDORS",
+  "SHOW_ALL_QUOTES",
+  "SHOW_ALL_ORDERS",
+  "REPORT",
+  "UNKNOWN",
+];
+
+function normalizeText(value: any): string {
+  return String(value ?? "")
+    .replace(/Â/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeComparisonResult(
+  question: string,
+  result: NLUResult
+): NLUResult {
+  const q = normalizeText(question);
+
+  if (result.intent !== "COMPARE_VENDORS") {
+    return result;
+  }
+
+  const explicitRating =
+    q.includes("rating") ||
+    q.includes("rated") ||
+    q.includes("highest rating") ||
+    q.includes("best rated") ||
+    q.includes("highest rated") ||
+    q.includes("top rated");
+
+  const explicitPrice =
+    q.includes("cheapest") ||
+    q.includes("lowest price") ||
+    q.includes("lowest priced") ||
+    q.includes("best price") ||
+    q.includes("lowest cost") ||
+    q.includes("least expensive") ||
+    q.includes("cheapest price");
+
+  const productMentioned =
+    result.entityType?.toLowerCase() === "product" &&
+    Boolean(result.entityName?.trim());
+
+  // ------------------------------------------------------------
+  // RATING COMPARISON
+  // ------------------------------------------------------------
+
+  if (explicitRating) {
+    return {
+      ...result,
+      intent: "COMPARE_VENDORS",
+      entityType: "Vendor",
+      fields: ["Rating"],
+    };
+  }
+
+  // ------------------------------------------------------------
+  // PRICE COMPARISON
+  // ------------------------------------------------------------
+
+  if (explicitPrice) {
+    return {
+      ...result,
+      intent: "COMPARE_VENDORS",
+      entityType: productMentioned ? "Product" : "Vendor",
+      fields: ["UnitPrice"],
+    };
+  }
+
+  // ------------------------------------------------------------
+  // GENERIC BEST VENDOR
+  // ------------------------------------------------------------
+
+  const genericBest =
+    q === "which is the best vendor" ||
+    q === "which vendor is best" ||
+    q === "who is the best vendor" ||
+    q === "best vendor" ||
+    q.startsWith("which is the best vendor for ") ||
+    q.startsWith("which vendor is best for ") ||
+    q.startsWith("best vendor for ");
+
+  if (genericBest) {
+    return {
+      ...result,
+      intent: "COMPARE_VENDORS",
+      entityType: productMentioned ? "Product" : "Vendor",
+      fields: ["Rating", "UnitPrice"],
+    };
+  }
+
+  // ------------------------------------------------------------
+  // COMPARE VENDORS
+  // ------------------------------------------------------------
+
+  if (
+    q.includes("compare vendors") ||
+    q.includes("compare suppliers") ||
+    q === "compare vendors" ||
+    q === "compare suppliers"
+  ) {
+    return {
+      ...result,
+      intent: "COMPARE_VENDORS",
+      entityType: productMentioned ? "Product" : "Vendor",
+      fields: ["Rating", "UnitPrice"],
+    };
+  }
+
+  return result;
+}
+
 export async function understandQuestion(
   question: string
 ): Promise<NLUResult> {
   try {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
+    }
+
     const completion = await client.chat.completions.create({
-      model: "openai/gpt-3.5-turbo",
+      model: GEMINI_MODEL,
       temperature: 0,
-      max_tokens: 250,
+      max_tokens: 300,
+
+      response_format: {
+        type: "json_object",
+      },
 
       messages: [
         {
@@ -43,10 +179,6 @@ You are an NLU engine for an enterprise procurement application.
 
 Your job is to understand the user's natural-language request and
 convert it into structured intent information.
-
-Do NOT require the user to use exact keywords.
-
-Understand the meaning of conversational questions.
 
 Return ONLY valid JSON.
 
@@ -75,194 +207,34 @@ REPORT
 UNKNOWN
 
 
-INTENT DEFINITIONS:
+============================================================
+PRODUCT_SEARCH
+============================================================
 
-PRODUCT_SEARCH:
-Questions about a specific product, its details, specifications,
-pricing, quantity, or other product information.
+Questions about a specific product, including:
 
-IMPORTANT PRODUCT RULE:
+- product details
+- specification
+- price
+- unit price
+- quantity
+- target price
 
-If the user names a product and asks for its price, unit price,
-specification, quantity, or target price, classify the entity as:
-
-"entityType": "Product"
-
-Never classify a named product as Vendor merely because the
-question involves price.
+If a product is explicitly named, entityType MUST be Product.
 
 Examples:
 
 "What is the price of Banana Jack?"
-=> PRODUCT_SEARCH / Product / Banana Jack / UnitPrice
 
-"What is the specification of Banana Jack?"
-=> PRODUCT_SEARCH / Product / Banana Jack / Specification
-
-"What is the quantity of Banana Jack?"
-=> PRODUCT_SEARCH / Product / Banana Jack / Quantity
-
-VENDOR_SEARCH:
-Questions about a specific vendor or supplier and its information,
-such as email, phone, account ID, status, rating, or delivery details.
-
-QUOTE_SEARCH:
-Questions about a specific quotation or quote.
-
-ORDER_SEARCH:
-Questions about a specific order.
-COMPARE_VENDORS:
-Requests to compare vendors or suppliers based on price,
-rating, delivery, or other criteria.
-
-IMPORTANT PRODUCT-SPECIFIC COMPARISON RULE:
-
-If the user asks to compare vendors FOR A SPECIFIC PRODUCT,
-the product must be extracted as the entity.
-
-Examples:
-
-"Which vendor is cheapest for Banana Jack?"
-"Which supplier has the lowest price for Banana Jack?"
-"Who sells Banana Jack cheapest?"
-"Which vendor offers the best price for Banana Jack?"
-"Compare vendors for Banana Jack."
-
-For all of these requests, return:
-
-"intent": "COMPARE_VENDORS"
-"entityType": "Product"
-"entityName": "<product name>"
-"fields": ["UnitPrice"]
-
-Example:
-
-User:
-"Which vendor is cheapest for Banana Jack?"
-
-Return:
-{
-  "intent": "COMPARE_VENDORS",
-  "entityType": "Product",
-  "entityName": "Banana Jack",
-  "fields": ["UnitPrice"]
-}
-
-If the user asks which vendor is cheapest WITHOUT specifying
-a product, classify it as a vendor-level comparison.
-
-Example:
-
-User:
-"Which vendor is cheapest?"
-
-Return:
-{
-  "intent": "COMPARE_VENDORS",
-  "entityType": "Vendor",
-  "entityName": "",
-  "fields": ["UnitPrice"]
-}
-
-If the user asks which vendor has the highest rating WITHOUT
-specifying a product, classify it as:
-
-{
-  "intent": "COMPARE_VENDORS",
-  "entityType": "Vendor",
-  "entityName": "",
-  "fields": ["Rating"]
-}
-PROCUREMENT_ANALYSIS:
-Requests for procurement-level analysis, purchasing recommendations,
-supplier allocation, cost analysis, fulfillment analysis, risks,
-missing products, savings, or overall procurement strategy.
-
-SHOW_ALL_PRODUCTS:
-Requests to list or display all products.
-
-SHOW_ALL_VENDORS:
-Requests to list or display all vendors.
-
-SHOW_ALL_QUOTES:
-Requests to list or display all quotes.
-
-SHOW_ALL_ORDERS:
-Requests to list or display all orders.
-
-REPORT:
-Requests to generate or retrieve a report, especially for a
-specific quote.
-
-UNKNOWN:
-Use when the request cannot be reliably classified.
-
-
-EXAMPLES:
-
-User:
-"Which vendor is cheapest for Banana Jack?"
-
-Return:
-{
-  "intent": "COMPARE_VENDORS",
-  "entityType": "Product",
-  "entityName": "Banana Jack",
-  "fields": ["UnitPrice"]
-}
-
-
-User:
-"Which supplier has the lowest price for Banana Jack?"
-
-Return:
-{
-  "intent": "COMPARE_VENDORS",
-  "entityType": "Product",
-  "entityName": "Banana Jack",
-  "fields": ["UnitPrice"]
-}
-
-
-User:
-"Who sells Banana Jack cheapest?"
-
-Return:
-{
-  "intent": "COMPARE_VENDORS",
-  "entityType": "Product",
-  "entityName": "Banana Jack",
-  "fields": ["UnitPrice"]
-}
-
-
-User:
-"Which vendor offers the best price for Banana Jack?"
-
-Return:
-{
-  "intent": "COMPARE_VENDORS",
-  "entityType": "Product",
-  "entityName": "Banana Jack",
-  "fields": ["UnitPrice"]
-}
-
-User:
-"Can you tell me everything about the diode?"
-
-Return:
 {
   "intent": "PRODUCT_SEARCH",
   "entityType": "Product",
-  "entityName": "Diode",
-  "fields": ["*"]
+  "entityName": "Banana Jack",
+  "fields": ["UnitPrice"]
 }
 
+"What is the specification of Resistor?"
 
-User:
-"What are the specifications of the resistor?"
-
-Return:
 {
   "intent": "PRODUCT_SEARCH",
   "entityType": "Product",
@@ -271,34 +243,61 @@ Return:
 }
 
 
-User:
-"Could you give me Qualcomm's email address?"
+============================================================
+VENDOR_SEARCH
+============================================================
 
-Return:
+Questions about a specific vendor.
+
+Examples:
+
+"What is the rating of Mouser Electronics?"
+
 {
   "intent": "VENDOR_SEARCH",
   "entityType": "Vendor",
-  "entityName": "Qualcomm",
+  "entityName": "Mouser Electronics",
+  "fields": ["Rating"]
+}
+
+"What is the email of Element14?"
+
+{
+  "intent": "VENDOR_SEARCH",
+  "entityType": "Vendor",
+  "entityName": "Element14",
   "fields": ["Email"]
 }
 
 
-User:
-"How can I contact Qualcomm?"
+============================================================
+COMPARE_VENDORS
+============================================================
 
-Return:
-{
-  "intent": "VENDOR_SEARCH",
-  "entityType": "Vendor",
-  "entityName": "Qualcomm",
-  "fields": ["Email", "Phone"]
-}
+Use COMPARE_VENDORS when the user asks which vendor/supplier
+should be selected or compared.
 
 
-User:
-"Which supplier offers the lowest price?"
+------------------------------------------------------------
+PRICE
+------------------------------------------------------------
 
-Return:
+If the user explicitly asks for:
+
+- cheapest
+- lowest price
+- lowest cost
+- best price
+- least expensive
+
+use:
+
+"fields": ["UnitPrice"]
+
+Examples:
+
+"Which vendor is cheapest?"
+
 {
   "intent": "COMPARE_VENDORS",
   "entityType": "Vendor",
@@ -306,11 +305,45 @@ Return:
   "fields": ["UnitPrice"]
 }
 
+"Which vendor is cheapest for Resistor?"
 
-User:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Resistor",
+  "fields": ["UnitPrice"]
+}
+
+
+------------------------------------------------------------
+RATING
+------------------------------------------------------------
+
+If the user explicitly asks for:
+
+- highest rating
+- best rating
+- highest rated
+- best rated
+- rating
+
+use:
+
+"fields": ["Rating"]
+
+Examples:
+
 "Which vendor has the highest rating?"
 
-Return:
+{
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Vendor",
+  "entityName": "",
+  "fields": ["Rating"]
+}
+
+"Best vendor based on rating?"
+
 {
   "intent": "COMPARE_VENDORS",
   "entityType": "Vendor",
@@ -319,100 +352,109 @@ Return:
 }
 
 
-User:
-"Can you compare the suppliers for me?"
+------------------------------------------------------------
+GENERIC BEST VENDOR
+------------------------------------------------------------
 
-Return:
+IMPORTANT:
+
+Do NOT assume that "best vendor" means cheapest vendor.
+
+"Best" without a specified criterion is a multi-criteria request.
+
+Use:
+
+"fields": ["Rating", "UnitPrice"]
+
+Examples:
+
+"Which is the best vendor?"
+
 {
   "intent": "COMPARE_VENDORS",
   "entityType": "Vendor",
   "entityName": "",
-  "fields": ["*"]
+  "fields": ["Rating", "UnitPrice"]
 }
 
+"Which is the best vendor for Resistor?"
 
-User:
-"Are there any products that weren't quoted?"
-
-Return:
 {
-  "intent": "PROCUREMENT_ANALYSIS",
-  "entityType": "Quote",
-  "entityName": "",
-  "fields": ["MissingProducts"]
+  "intent": "COMPARE_VENDORS",
+  "entityType": "Product",
+  "entityName": "Resistor",
+  "fields": ["Rating", "UnitPrice"]
 }
 
 
-User:
-"Which supplier should we buy from?"
+============================================================
+PRODUCT-SPECIFIC COMPARISON
+============================================================
 
-Return:
-{
-  "intent": "PROCUREMENT_ANALYSIS",
-  "entityType": "Vendor",
-  "entityName": "",
-  "fields": ["*"]
-}
+If the user names a product, preserve the exact product name
+as entityName.
 
+Examples:
 
-User:
-"Analyze the quotations and recommend the best purchasing strategy."
+"Which vendor is cheapest for Banana Jack?"
 
-Return:
-{
-  "intent": "PROCUREMENT_ANALYSIS",
-  "entityType": "Quote",
-  "entityName": "",
-  "fields": ["*"]
-}
+"Which vendor has the best rating for Banana Jack?"
+
+"Which vendor is best for Resistor?"
+
+entityType MUST be Product.
 
 
-User:
-"What risks should we consider before placing the order?"
+============================================================
+PROCUREMENT_ANALYSIS
+============================================================
 
-Return:
-{
-  "intent": "PROCUREMENT_ANALYSIS",
-  "entityType": "Quote",
-  "entityName": "",
-  "fields": ["Risks"]
-}
+Use for:
 
-
-User:
-"Generate a report for quote 00000080."
-
-Return:
-{
-  "intent": "REPORT",
-  "entityType": "Quote",
-  "entityName": "00000080",
-  "fields": ["*"]
-}
+- procurement strategy
+- supplier allocation
+- quote analysis
+- savings
+- risks
+- missing products
+- purchasing recommendation
 
 
-User:
-"Show me all the suppliers."
+============================================================
+SHOW ALL
+============================================================
 
-Return:
-{
-  "intent": "SHOW_ALL_VENDORS",
-  "entityType": "Vendor",
-  "entityName": "",
-  "fields": ["*"]
-}
+"Show all products"
+=> SHOW_ALL_PRODUCTS
+
+"Show all vendors"
+=> SHOW_ALL_VENDORS
+
+"Show all quotes"
+=> SHOW_ALL_QUOTES
+
+"Show all orders"
+=> SHOW_ALL_ORDERS
 
 
-User:
-"Give me the details of order ORD12345."
+============================================================
+REPORT
+============================================================
 
-Return:
-{
-  "intent": "ORDER_SEARCH",
-  "entityType": "Order",
-  "entityName": "ORD12345",
-  "fields": ["*"]
-}
+Use REPORT for requests to generate/retrieve a report.
+
+
+============================================================
+IMPORTANT RULES
+============================================================
+
+1. Never invent entities.
+2. Preserve named product/vendor names.
+3. Explicit Rating => Rating.
+4. Explicit Price => UnitPrice.
+5. Generic Best => Rating + UnitPrice.
+6. Never treat generic "best" as automatically "cheapest".
+7. Return only JSON.
 `,
         },
         {
@@ -423,19 +465,41 @@ Return:
     });
 
     const text =
-      completion.choices[0].message.content || "{}";
+      completion.choices[0]?.message?.content || "{}";
 
-    const result = JSON.parse(text);
+    console.log("========== NLU ==========");
+    console.log(text);
+    console.log("=========================");
 
-    return {
-      intent: result.intent ?? "UNKNOWN",
-      entityType: result.entityType ?? "",
-      entityName: result.entityName ?? "",
-      fields: Array.isArray(result.fields)
-        ? result.fields
-        : [],
+    const parsed = JSON.parse(text);
+
+    const result: NLUResult = {
+      intent: VALID_INTENTS.includes(parsed.intent)
+        ? parsed.intent
+        : "UNKNOWN",
+
+      entityType:
+        typeof parsed.entityType === "string"
+          ? parsed.entityType
+          : "",
+
+      entityName:
+        typeof parsed.entityName === "string"
+          ? parsed.entityName
+          : "",
+
+      fields:
+        Array.isArray(parsed.fields)
+          ? parsed.fields.map((field: any) =>
+              String(field)
+            )
+          : [],
     };
 
+    return normalizeComparisonResult(
+      question,
+      result
+    );
   } catch (err) {
     console.error("NLU ERROR", err);
 

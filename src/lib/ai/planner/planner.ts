@@ -3,9 +3,13 @@ import { RetrievalPlan } from "../types/planner";
 import { PLANNER_PROMPT } from "../llmPrompts/plannerPrompt";
 
 const client = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL:
+    "https://generativelanguage.googleapis.com/v1beta/openai/",
+  apiKey: process.env.GEMINI_API_KEY,
 });
+
+const GEMINI_MODEL =
+  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 export async function createPlan(
   userQuestion: string,
@@ -15,15 +19,15 @@ export async function createPlan(
   const completion =
     await client.chat.completions.create({
 
-      model: "openai/gpt-4o-mini",
+      model: GEMINI_MODEL,
 
-temperature: 0,
+      temperature: 0,
 
-max_tokens: 800,
+      max_tokens: 800,
 
-response_format: {
-  type: "json_object"
-},
+      response_format: {
+        type: "json_object"
+      },
 
       messages: [
 

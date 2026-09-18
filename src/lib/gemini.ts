@@ -1,31 +1,28 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
-const genAI = new GoogleGenerativeAI(
-  process.env.GEMINI_API_KEY!
-);
+const apiKey = process.env.GEMINI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("GEMINI_API_KEY is not configured in .env.local");
+}
+
+const ai = new GoogleGenAI({
+  apiKey,
+});
 
 export async function generateAIResponse(
   prompt: string
-) {
+): Promise<string> {
   try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: prompt,
+    });
 
-    const model =
-      genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
-      });
-
-    const result =
-      await model.generateContent(prompt);
-
-    return result.response.text();
+    return response.text || "";
 
   } catch (error) {
-
-    console.error(
-      "Gemini Error:",
-      error
-    );
-
+    console.error("Gemini Error:", error);
     throw error;
   }
 }

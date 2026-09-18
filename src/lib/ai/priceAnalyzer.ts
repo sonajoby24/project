@@ -26,8 +26,7 @@ export function analyzePrice(
     };
   }
 
-  const difference =
-    vendorPrice - targetPrice;
+  const difference = vendorPrice - targetPrice;
 
   const percentage =
     (difference / targetPrice) * 100;
@@ -35,15 +34,49 @@ export function analyzePrice(
   let category: string;
   let remark: string;
 
-  if (difference < 0) {
+  // Vendor price is lower than target
+  if (percentage < 0) {
+
     category = "Below Target";
+
     remark = "Lower than target price";
-  } else if (difference > 0) {
-    category = "Above Target";
-    remark = "Higher than target price";
-  } else {
+
+  }
+
+  // Same as target
+  else if (percentage === 0) {
+
     category = "At Target";
+
     remark = "Matches target price";
+
+  }
+
+  // 0.5% - 3% higher
+  else if (percentage >= 0.5 && percentage <= 3) {
+
+    category = "Low";
+
+    remark = "There is slight price hike";
+
+  }
+
+  // >3% - 7% higher
+  else if (percentage > 3 && percentage <= 7) {
+
+    category = "Medium";
+
+    remark = "Medium Price Hike";
+
+  }
+
+  // >7% higher
+  else {
+
+    category = "High";
+
+    remark = "Higher difference";
+
   }
 
   return {

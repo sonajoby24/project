@@ -1,4 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
+
+
+const GEMINI_PROCUREMENT_MODEL =
+  process.env.GEMINI_PROCUREMENT_MODEL ||
+  "gemini-3.5-flash";
 
 /* ============================================================
    GEMINI PROCUREMENT AI RESULT
@@ -42,43 +46,16 @@ export interface ProcurementAIResult {
 
 
 /* ============================================================
-   GEMINI PROCUREMENT AGENT
-   ============================================================
-
-   IMPORTANT ARCHITECTURE:
-
-   Deterministic code:
-      - retrieves Firebase data
-      - matches products
-      - calculates prices
-      - calculates quantities
-      - calculates differences
-      - identifies missing products
-      - identifies vendor coverage
-
-   Gemini:
-      - interprets the evidence
-      - reasons about trade-offs
-      - evaluates procurement strategy
-      - identifies risks
-      - identifies opportunities
-      - recommends actions
-      - provides confidence
-
-   Gemini DOES NOT change factual calculations.
+   PROCUREMENT AGENT
    ============================================================ */
 
 export async function runProcurementAgent(
   procurementEvidence: any
 ): Promise<ProcurementAIResult> {
 
-  console.log(
-    "===================================="
-  );
-
-  console.log(
-    "GEMINI PROCUREMENT EVIDENCE"
-  );
+  console.log("====================================");
+  console.log("GEMINI PROCUREMENT EVIDENCE");
+  console.log("====================================");
 
   console.log(
     JSON.stringify(
@@ -88,249 +65,155 @@ export async function runProcurementAgent(
     )
   );
 
-  console.log(
-    "===================================="
-  );
 
-  const apiKey =
-    process.env.GEMINI_API_KEY;
+  /* ============================================================
+     GEMINI API KEY
+     ============================================================ */
 
+  const apiKey = process.env.GEMINI_API_KEY;
 
   console.log(
     "GEMINI API KEY PRESENT:",
     Boolean(apiKey)
   );
 
-
   if (!apiKey) {
-
     throw new Error(
       "GEMINI_API_KEY is not configured in .env.local"
     );
-
   }
 
 
   /* ============================================================
-     2. CREATE GEMINI CLIENT
-     ============================================================ */
-
-  const ai =
-    new GoogleGenAI({
-      apiKey
-    });
-
-
-  /* ============================================================
-     3. SYSTEM INSTRUCTION
+     AI INSTRUCTION
      ============================================================ */
 
   const systemInstruction = `
-
 You are Catalogix Procurement Intelligence Agent.
 
-You are the AI reasoning layer of an agentic procurement system.
+You analyze factual procurement evidence generated directly
+from procurement data retrieved from Firestore.
 
-The application has already retrieved and calculated the
-procurement evidence.
+The procurement evidence is the factual source of truth.
 
-Your job is NOT to perform basic arithmetic again.
+The application has already calculated factual comparisons
+such as:
 
-Your job is to reason over the evidence and make an intelligent
-procurement assessment.
-
-------------------------------------------------------------
-FACTUAL EVIDENCE PROVIDED BY THE APPLICATION
-------------------------------------------------------------
-
-The evidence may contain:
-
-- Master quote information
-- Vendor quote information
-- Product names
-- Product specifications
-- Requested quantities
-- Vendor quantities
-- Target prices
-- Vendor prices
-- Price differences
-- Quantity matches
-- Specification matches
-- Missing products
-- Extra products
-- Vendor coverage
-- Cheapest vendor per product
-- Combined vendor cost
-- Price compliance
-- Quantity compliance
-
-Treat these values as authoritative.
-
-DO NOT modify them.
-
-------------------------------------------------------------
-YOUR RESPONSIBILITY
-------------------------------------------------------------
-
-Reason about:
-
-1. Overall procurement strategy
-2. Vendor suitability
-3. Product-level recommendations
-4. Commercial risks
-5. Quantity fulfilment risks
-6. Specification risks
-7. Missing quotation risks
-8. Cost-saving opportunities
-9. Vendor concentration
-10. Single-vendor versus multi-vendor strategy
-11. Products requiring human review
-12. Procurement actions
-
-------------------------------------------------------------
-IMPORTANT REASONING RULES
-------------------------------------------------------------
-
-A cheapest vendor is NOT automatically the best vendor.
-
-Consider:
-
-- price
-- quantity fulfilment
-- specification compliance
-- vendor coverage
+- products
+- specifications
+- quantities
+- vendor prices
+- target prices
+- totals
+- quantity matches
+- price matches
 - missing products
-- price above target
-- price below target
-- concentration across vendors
+- extra products
+- vendor coverage
+- procurement metrics
 
-If a vendor has a lower price but does not satisfy quantity
-requirements, treat that as a risk.
+Your responsibility is to interpret and explain this evidence
+and produce procurement intelligence.
 
-If a product is missing from all vendors, classify it as
-"Not Quoted".
+Do not invent or change factual values.
 
-Never treat a missing product as zero cost.
+Do not invent:
 
-If a vendor price is above the target price, identify it as a
-commercial risk.
-
-If a vendor price is below the target price, identify the
-difference as a potential cost-saving opportunity.
-
-If specifications do not match, identify a technical risk.
-
-If requested quantity is greater than vendor quantity,
-identify a fulfilment risk.
-
-------------------------------------------------------------
-VENDOR STRATEGY
-
-Evaluate whether:
-
-A. A single-vendor strategy is supported by the evidence.
-
-OR
-
-B. A multi-vendor strategy is better supported.
-
-Do not automatically select a single vendor based only on price.
-
-If one vendor is the only vendor quoting a product,
-treat that vendor as the supported source for that product.
-
-If different vendors are the only quoted or lowest-priced
-source for different products, this supports a multi-vendor
-strategy.
-
-If both vendors quote a product at the same price,
-do not claim either vendor has a price advantage.
-
-When evaluating single-vendor versus multi-vendor strategy,
-consider the complete product coverage across all supplied
-evidence, not only the selected quote.
-
-If neither vendor can independently fulfill all master products,
-do not recommend a single-vendor strategy as the preferred
-strategy.
-
-Instead, state that a multi-vendor strategy is better supported
-by the available evidence.
-
-However, do not assume that multi-vendor procurement is
-operationally superior when information such as shipping,
-lead time, stock availability, payment terms, or supplier
-performance is unavailable.
-
-State these as procurement risks or information gaps.
-
-Do NOT invent:
-
-- shipping costs
+- vendors
+- products
+- prices
+- quantities
+- specifications
+- costs
 - delivery dates
 - lead times
-- stock availability
-- warranty
-- supplier quality
+- stock information
+- warranty information
 - payment terms
+- supplier performance
 - logistics information
 
-If such information is unavailable, say that human review is
-required.
+If information is unavailable, explicitly identify it as an
+information gap when relevant.
 
-------------------------------------------------------------
-CONFIDENCE
-------------------------------------------------------------
+You may reason over relationships between the supplied values.
 
-High:
+You may compare vendors.
 
-The supplied evidence strongly supports the recommendation.
+You may compare prices.
 
-Medium:
+You may evaluate quantities.
 
-The evidence supports the recommendation but there are
-meaningful trade-offs.
+You may evaluate specifications.
 
-Low:
+You may identify missing products.
 
-Important information is missing and human review is required.
+You may identify commercial or technical risks.
 
-------------------------------------------------------------
-TRACEABILITY
-------------------------------------------------------------
+You may identify cost-saving opportunities.
 
-Every recommendation must be explainable from the supplied
+You may recommend procurement actions.
+
+All factual conclusions must be supported by the supplied
 procurement evidence.
 
-Never invent facts.
+Do not replace factual evidence with assumptions.
 
-Never invent vendors.
+Do not create a vendor, product, price, quantity, specification,
+or cost that does not exist in the evidence.
 
-Never invent prices.
+For every product, determine the most appropriate procurement
+assessment based on the complete evidence available for that
+product.
 
-Never invent quantities.
+For Master Quote reports, the evidence contains the selected
+Master Quote and its actual child/vendor quotations.
 
-Never invent specifications.
+For Transactional Quote reports, the evidence contains the
+selected transactional quote and its exact parent Master Quote.
 
-------------------------------------------------------------
-OUTPUT
-------------------------------------------------------------
+Respect the distinction between these two report modes.
+
+For Master Quote reports, analyze the complete set of child/vendor
+quotations supplied in the evidence.
+
+For Transactional Quote reports, analyze only the selected
+transactional quote against its parent Master Quote.
+
+Do not assume that a particular vendor is better.
+
+Do not assume that the cheapest vendor is automatically the best
+procurement choice.
+
+Do not invent additional procurement criteria that are not
+supported by the evidence.
+
+When multiple procurement strategies are possible, explain the
+trade-offs using only the available evidence.
+
+The output structure is fixed because it is consumed by the
+application, but the content must be generated dynamically from
+the supplied procurement evidence.
 
 Return ONLY valid JSON matching the requested schema.
 
+Do not return Markdown.
+
+Do not return code fences.
+
+Do not add explanations outside the JSON object.
 `;
 
 
   /* ============================================================
-     4. BUILD PROCUREMENT PROMPT
+     PROCUREMENT EVIDENCE PROMPT
      ============================================================ */
 
   const prompt = `
+Analyze the following procurement evidence.
 
-You are analysing VERIFIED procurement evidence generated by
-the Catalogix procurement engine.
-
-The evidence below is authoritative.
+This is the actual procurement data retrieved by the
+application.
 
 ==============================
 PROCUREMENT EVIDENCE
@@ -343,73 +226,110 @@ ${JSON.stringify(
 )}
 
 ==============================
-YOUR TASK
-==============================
 
-Perform intelligent procurement reasoning.
+Perform a complete AI-driven procurement analysis.
 
-Determine:
+Determine dynamically:
 
-1. The best overall procurement strategy,
-   based on complete vendor coverage and product-level pricing.
+1. Overall procurement assessment.
 
-2. Determine whether Element14 can independently fulfill
-   all master products.
+2. Executive procurement recommendation.
 
-3. Determine whether Mouser Electronics can independently
-   fulfill all master products.
+3. Suitable vendor or vendors.
 
-4. If neither vendor can independently fulfill all master
-   products, determine whether a multi-vendor strategy
-   is better supported.
+4. Product-level procurement recommendations.
 
-5. The overall procurement assessment.
+5. Specification considerations.
 
-6. Which vendors are suitable and why.
+6. Price considerations.
 
-7. Which products should be recommended.
+7. Quantity considerations.
 
-8. Which products require human review.
+8. Missing quotation coverage.
 
-9. Which products should not be recommended.
+9. Procurement risks.
 
-10. Which products are not quoted.
+10. Cost-saving opportunities.
 
-11. Procurement risks.
+11. Important procurement insights.
 
-12. Cost-saving opportunities.
+12. Recommended procurement actions.
 
-13. Important procurement insights.
+Consider all available evidence together rather than applying
+a single fixed decision rule.
 
-14. Concrete procurement actions.
+Use the exact product names, vendor names, quantities,
+specifications and prices supplied in the evidence.
 
-IMPORTANT:
+Do not invent information.
 
-Do not change any factual values from the evidence.
-
-Do not invent missing information.
-
-Every recommendation must be traceable to the evidence.
-
-Think like an experienced procurement analyst rather than
-simply selecting the cheapest price.
+If the evidence contains multiple possible procurement
+strategies, explain the trade-offs and select the strategy
+that is best supported by the evidence.
 
 Return ONLY JSON.
 
+The JSON must follow this exact structure:
+
+{
+  "executiveRecommendation": "string",
+  "overallAssessment": "string",
+  "recommendedVendors": [
+    {
+      "vendor": "string",
+      "products": ["string"],
+      "reason": "string",
+      "confidence": "High"
+    }
+  ],
+  "productRecommendations": [
+    {
+      "product": "string",
+      "specification": "string",
+      "recommendation": "Recommended",
+      "reason": "string",
+      "risk": "string"
+    }
+  ],
+  "risks": ["string"],
+  "opportunities": ["string"],
+  "insights": ["string"],
+  "procurementActions": ["string"]
+}
+
+Allowed values for product recommendation:
+
+- Recommended
+- Review
+- Not Recommended
+- Not Quoted
+
+Allowed values for vendor confidence:
+
+- High
+- Medium
+- Low
+
+Return ONLY the JSON object.
 `;
 
 
   /* ============================================================
-     5. SEND EVIDENCE TO GEMINI
+     SEND PROCUREMENT EVIDENCE TO GEMINI
      ============================================================ */
 
   console.log(
     "=================================================="
   );
 
-  console.log(
-    "🚀 SENDING PROCUREMENT EVIDENCE TO GEMINI"
-  );
+ console.log(
+  "🚀 SENDING PROCUREMENT EVIDENCE TO GEMINI"
+);
+
+console.log(
+  "Gemini Procurement Model:",
+  GEMINI_PROCUREMENT_MODEL
+);
 
   console.log(
     "Evidence size:",
@@ -424,289 +344,90 @@ Return ONLY JSON.
 
   try {
 
-    const response =
-      await ai.models.generateContent({
-
-        /*
-         * Gemini reasoning model
-         *
-         * Gemini 3.6 Flash supports thinking configuration.
-         */
-
-       model: "gemini-3.6-flash", 
-       
-        contents:
-          prompt,
-
-        config: {
-
-          systemInstruction,
-
-          /*
-           * We need machine-readable JSON because
-           * the dashboard will consume this result.
-           */
-
-          responseMimeType:
-            "application/json",
-
-          responseSchema: {
-
-            type: "object",
-
-            properties: {
-
-              executiveRecommendation: {
-
-                type: "string"
-
-              },
-
-
-              overallAssessment: {
-
-                type: "string"
-
-              },
-
-
-              recommendedVendors: {
-
-                type: "array",
-
-                items: {
-
-                  type: "object",
-
-                  properties: {
-
-                    vendor: {
-
-                      type: "string"
-
-                    },
-
-                    products: {
-
-                      type: "array",
-
-                      items: {
-
-                        type: "string"
-
-                      }
-
-                    },
-
-                    reason: {
-
-                      type: "string"
-
-                    },
-
-                    confidence: {
-
-                      type: "string",
-
-                      enum: [
-
-                        "High",
-
-                        "Medium",
-
-                        "Low"
-
-                      ]
-
-                    }
-
-                  },
-
-                  required: [
-
-                    "vendor",
-
-                    "products",
-
-                    "reason",
-
-                    "confidence"
-
-                  ]
-
-                }
-
-              },
-
-
-              productRecommendations: {
-
-                type: "array",
-
-                items: {
-
-                  type: "object",
-
-                  properties: {
-
-                    product: {
-
-                      type: "string"
-
-                    },
-
-                    specification: {
-
-                      type: "string"
-
-                    },
-
-                    recommendation: {
-
-                      type: "string",
-
-                      enum: [
-
-                        "Recommended",
-
-                        "Review",
-
-                        "Not Recommended",
-
-                        "Not Quoted"
-
-                      ]
-
-                    },
-
-                    reason: {
-
-                      type: "string"
-
-                    },
-
-                    risk: {
-
-                      type: "string"
-
-                    }
-
-                  },
-
-                  required: [
-
-                    "product",
-
-                    "specification",
-
-                    "recommendation",
-
-                    "reason",
-
-                    "risk"
-
-                  ]
-
-                }
-
-              },
-
-
-              risks: {
-
-                type: "array",
-
-                items: {
-
-                  type: "string"
-
-                }
-
-              },
-
-
-              opportunities: {
-
-                type: "array",
-
-                items: {
-
-                  type: "string"
-
-                }
-
-              },
-
-
-              insights: {
-
-                type: "array",
-
-                items: {
-
-                  type: "string"
-
-                }
-
-              },
-
-
-              procurementActions: {
-
-                type: "array",
-
-                items: {
-
-                  type: "string"
-
-                }
-
+    const response = await fetch(
+  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PROCUREMENT_MODEL}:generateContent`,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+
+        body: JSON.stringify({
+
+          systemInstruction: {
+            parts: [
+              {
+                text: systemInstruction
               }
-
-            },
-
-
-            required: [
-
-              "executiveRecommendation",
-
-              "overallAssessment",
-
-              "recommendedVendors",
-
-              "productRecommendations",
-
-              "risks",
-
-              "opportunities",
-
-              "insights",
-
-              "procurementActions"
-
             ]
-
           },
 
-          /*
-           * Keep temperature / randomness low because
-           * procurement recommendations must be consistent.
-           */
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: prompt
+                }
+              ]
+            }
+          ],
 
-          temperature:
-            0.2,
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 3000,
+            responseMimeType: "application/json"
+          }
 
-          /*
-           * Enable deeper model reasoning where supported.
-           */
-
-        }
-
-      });
+        })
+      }
+    );
 
 
     /* ============================================================
-       6. RECEIVE GEMINI RESPONSE
+       READ GEMINI RESPONSE
+       ============================================================ */
+
+    const data = await response.json();
+
+
+    /* ============================================================
+       HANDLE GEMINI API ERRORS
+       ============================================================ */
+
+    if (!response.ok) {
+
+      console.error(
+        "=================================================="
+      );
+
+      console.error(
+        "❌ GEMINI API ERROR"
+      );
+
+      console.error(
+        JSON.stringify(
+          data,
+          null,
+          2
+        )
+      );
+
+      console.error(
+        "=================================================="
+      );
+
+      throw new Error(
+        data?.error?.message ||
+        `Gemini request failed with status ${response.status}`
+      );
+    }
+
+
+    /* ============================================================
+       GEMINI RESPONSE RECEIVED
        ============================================================ */
 
     console.log(
@@ -723,21 +444,18 @@ Return ONLY JSON.
 
 
     const rawText =
-      response.text;
+      data?.candidates?.[0]?.content?.parts
+        ?.map((part: any) => part?.text || "")
+        .join("")
+        .trim();
 
 
     console.log(
       "GEMINI RAW RESPONSE:"
     );
 
-    console.log(
-      rawText
-    );
+    console.log(rawText);
 
-
-    /* ============================================================
-       7. CHECK EMPTY RESPONSE
-       ============================================================ */
 
     if (!rawText) {
 
@@ -749,17 +467,59 @@ Return ONLY JSON.
 
 
     /* ============================================================
-       8. PARSE STRUCTURED JSON
+       CLEAN JSON RESPONSE
+       ============================================================ */
+
+    let cleanedText =
+      String(rawText).trim();
+
+
+    if (
+      cleanedText.startsWith("```json")
+    ) {
+
+      cleanedText =
+        cleanedText.substring(7);
+
+    } else if (
+      cleanedText.startsWith("```")
+    ) {
+
+      cleanedText =
+        cleanedText.substring(3);
+
+    }
+
+
+    if (
+      cleanedText.endsWith("```")
+    ) {
+
+      cleanedText =
+        cleanedText.substring(
+          0,
+          cleanedText.length - 3
+        );
+
+    }
+
+
+    cleanedText =
+      cleanedText.trim();
+
+
+    /* ============================================================
+       PARSE JSON
        ============================================================ */
 
     try {
 
       const parsed =
-        JSON.parse(rawText);
+        JSON.parse(cleanedText);
 
 
       console.log(
-        "=================================================="
+        "===================================="
       );
 
       console.log(
@@ -767,28 +527,37 @@ Return ONLY JSON.
       );
 
       console.log(
-        "=================================================="
-      );
+        "====================================");
 
 
-      return parsed;
+      return parsed as ProcurementAIResult;
 
 
     } catch (error) {
+
+      console.error(
+        "===================================="
+      );
 
       console.error(
         "❌ INVALID GEMINI PROCUREMENT JSON"
       );
 
       console.error(
-        rawText
+        "===================================="
       );
+
+      console.error(
+        cleanedText
+      );
+
 
       throw new Error(
         "Gemini returned invalid procurement analysis JSON."
       );
 
     }
+
 
   } catch (error: any) {
 
@@ -807,7 +576,6 @@ Return ONLY JSON.
     console.error(
       "=================================================="
     );
-
 
     throw error;
 

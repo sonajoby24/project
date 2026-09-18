@@ -1,40 +1,160 @@
+function normalize(value: any = ""): string {
+  return String(value ?? "")
+    .replace(/Â/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function getVendor(line: any): string {
+  return String(
+    line?.VendorName ??
+    line?.vendor ??
+    line?.Vendor ??
+    ""
+  ).trim();
+}
+
+function getProduct(line: any): string {
+  return String(
+    line?.ProductName ??
+    line?.product ??
+    line?.Product ??
+    ""
+  ).trim();
+}
+
+function getSpecification(line: any): string {
+  return String(
+    line?.specValue ??
+    line?.Specification ??
+    line?.specification ??
+    line?.VendorSpecification ??
+    ""
+  ).trim();
+}
+
+function getUnitPrice(line: any): number {
+  return Number(
+    line?.UnitPrice ??
+    line?.unitPrice ??
+    line?.Price
+  );
+}
+
+function getQuantity(line: any): any {
+  return (
+    line?.Quantity ??
+    line?.quantity ??
+    null
+  );
+}
+
+function getQuoteId(line: any): string {
+  return String(
+    line?.quoteId ??
+    line?.QuoteID ??
+    line?.QuoteId ??
+    ""
+  ).trim();
+}
+
+function getQuoteNumber(line: any): string {
+  return String(
+    line?.quoteNumber ??
+    line?.QuoteNumber ??
+    ""
+  ).trim();
+}
+
+function getQuoteType(line: any): string {
+  return String(
+    line?.quoteType ??
+    line?.QuoteType ??
+    ""
+  ).trim();
+}
+
+/**
+ * Product + specification is the identity of an item
+ * for vendor comparison.
+ *
+ * Example:
+ *
+ * Header | 100mil, 2x1
+ * Header | 100mil, 3x1
+ * Header | 100mil, 4x1
+ *
+ * are three different comparison items.
+ */
+function comparisonKey(
+  product: string,
+  specification: string
+): string {
+  return `${normalize(product)}::${normalize(
+    specification
+  )}`;
+}
+
 export function compareVendorQuotes(
   quoteLines: any[]
 ) {
   const items: any[] = [];
 
   // ============================================================
-  // BUILD COMPARISON ITEMS
+  // BUILD VALID COMPARISON ITEMS
   // ============================================================
 
   for (const line of quoteLines ?? []) {
 
-    // Master quotes are not vendors
+    // ----------------------------------------------------------
+    // MASTER QUOTES ARE NOT VENDORS
+    // ----------------------------------------------------------
+
     if (
-      String(line.quoteType || "").toLowerCase() === "master"
+      normalize(getQuoteType(line)) ===
+      "master"
     ) {
       continue;
     }
 
     const vendor =
-      line.VendorName ||
-      line.vendor;
+      getVendor(line);
 
     const product =
-      line.ProductName ||
-      line.product;
+      getProduct(line);
+
+    const specification =
+      getSpecification(line);
+
+    const rawUnitPrice =
+      line?.UnitPrice ??
+      line?.unitPrice ??
+      line?.Price;
 
     const unitPrice =
-      Number(line.UnitPrice);
+      Number(rawUnitPrice);
 
-    // Ignore incomplete records
+    // ----------------------------------------------------------
+    // VALIDATION
+    // ----------------------------------------------------------
+
     if (!vendor || !product) {
       continue;
     }
 
-    // Ignore unknown vendors
     if (
-      String(vendor).toLowerCase() === "unknown vendor"
+      normalize(vendor) ===
+      "unknown vendor"
+    ) {
+      continue;
+    }
+
+    if (
+      rawUnitPrice === null ||
+      rawUnitPrice === undefined ||
+      rawUnitPrice === ""
     ) {
       continue;
     }
@@ -44,29 +164,86 @@ export function compareVendorQuotes(
     }
 
     items.push({
-      vendor: String(vendor).trim(),
-      product: String(product).trim(),
+      vendor,
+      product,
+      specification,
       unitPrice,
-      quoteId: line.quoteId,
-      quoteNumber: line.quoteNumber,
-      quoteType: line.quoteType
+
+      quoteId:
+        getQuoteId(line),
+
+      quoteNumber:
+        getQuoteNumber(line),
+
+      quoteType:
+        getQuoteType(line),
+
+      Quantity:
+        getQuantity(line)
     });
   }
 
   // ============================================================
-  // GROUP PRODUCTS
+  // DEDUPLICATE IDENTICAL QUOTE LINES
+  // ============================================================
+  //
+  // The same vendor can sometimes appear more than once for the
+  // same product/specification/price/quote.
+  //
+  // Do not let duplicate records artificially influence the
+  // vendor's average price.
+  //
+  // ============================================================
+
+  const uniqueItems: any[] = [];
+
+  const seen = new Set<string>();
+
+  for (const item of items) {
+
+    const key = [
+      normalize(item.vendor),
+      normalize(item.product),
+      normalize(item.specification),
+      item.unitPrice,
+      normalize(item.quoteId),
+      normalize(item.quoteNumber)
+    ].join("::");
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    uniqueItems.push(item);
+  }
+
+  // ============================================================
+  // PRODUCT + SPECIFICATION GROUPS
   // ============================================================
 
   const productGroups =
     new Map<string, any[]>();
 
-  for (const item of items) {
+  for (const item of uniqueItems) {
 
     const key =
-      item.product.toLowerCase().trim();
+      comparisonKey(
+        item.product,
+        item.specification
+      );
 
-    if (!productGroups.has(key)) {
-      productGroups.set(key, []);
+    if (!key) {
+      continue;
+    }
+
+    if (
+      !productGroups.has(key)
+    ) {
+      productGroups.set(
+        key,
+        []
+      );
     }
 
     productGroups
@@ -75,117 +252,280 @@ export function compareVendorQuotes(
   }
 
   // ============================================================
-  // CHEAPEST VENDOR BY PRODUCT
+  // CHEAPEST VENDOR BY PRODUCT + SPECIFICATION
   // ============================================================
 
-  const cheapestByProduct: any[] = [];
+  const cheapestByProduct:
+    any[] = [];
 
-  for (const [product, productItems] of productGroups) {
+  for (
+    const [
+      key,
+      productItems
+    ] of productGroups
+  ) {
+
+    if (
+      productItems.length === 0
+    ) {
+      continue;
+    }
 
     const sorted =
       [...productItems]
         .sort(
           (a, b) =>
-            a.unitPrice - b.unitPrice
+            a.unitPrice -
+            b.unitPrice
         );
 
     const cheapestPrice =
-      sorted[0]?.unitPrice;
+      sorted[0].unitPrice;
 
-    const cheapestVendors =
+    const cheapestItems =
       sorted.filter(
-        item =>
-          item.unitPrice === cheapestPrice
+        (item) =>
+          Math.abs(
+            item.unitPrice -
+            cheapestPrice
+          ) < 0.000001
       );
+
+    const first =
+      sorted[0];
 
     cheapestByProduct.push({
 
-      product,
+      // Keep the actual display values.
+      product:
+        first.product,
 
-      // Keep all vendors when there is a price tie
+      specification:
+        first.specification,
+
+      // --------------------------------------------------------
+      // Backward-compatible single vendor field
+      // --------------------------------------------------------
+
+      vendor:
+        cheapestItems.length === 1
+          ? cheapestItems[0].vendor
+          : cheapestItems
+              .map(
+                (item) =>
+                  item.vendor
+              )
+              .join(", "),
+
+      unitPrice:
+        cheapestPrice,
+
+      quoteNumber:
+        cheapestItems.length === 1
+          ? cheapestItems[0].quoteNumber
+          : "",
+
+      quoteId:
+        cheapestItems.length === 1
+          ? cheapestItems[0].quoteId
+          : "",
+
+      quoteType:
+        cheapestItems.length === 1
+          ? cheapestItems[0].quoteType
+          : "",
+
+      // --------------------------------------------------------
+      // Detailed tie information
+      // --------------------------------------------------------
+
       vendors:
-        cheapestVendors.map(item => ({
-          vendor: item.vendor,
-          unitPrice: item.unitPrice,
-          quoteNumber: item.quoteNumber,
-          quoteId: item.quoteId
-        })),
+        cheapestItems.map(
+          (item) => ({
+            vendor:
+              item.vendor,
+
+            unitPrice:
+              item.unitPrice,
+
+            quoteNumber:
+              item.quoteNumber,
+
+            quoteId:
+              item.quoteId,
+
+            quoteType:
+              item.quoteType
+          })
+        ),
 
       cheapestPrice,
 
       priceTie:
-        cheapestVendors.length > 1,
+        cheapestItems.length > 1,
 
       allVendors:
-        sorted.map(item => ({
-          vendor: item.vendor,
-          unitPrice: item.unitPrice,
-          quoteNumber: item.quoteNumber,
-          quoteId: item.quoteId
-        }))
+        sorted.map(
+          (item) => ({
+            vendor:
+              item.vendor,
+
+            unitPrice:
+              item.unitPrice,
+
+            quoteNumber:
+              item.quoteNumber,
+
+            quoteId:
+              item.quoteId,
+
+            quoteType:
+              item.quoteType
+          })
+        )
     });
   }
 
   // ============================================================
-  // VENDOR PRICES
+  // VENDOR → PRODUCT + SPECIFICATION → PRICE
   // ============================================================
 
   const vendorProducts =
-    new Map<string, Map<string, number>>();
+    new Map<
+      string,
+      Map<string, number>
+    >();
 
-  for (const item of items) {
+  for (
+    const item of uniqueItems
+  ) {
 
-    if (!vendorProducts.has(item.vendor)) {
+    const vendorKey =
+      normalize(item.vendor);
+
+    const productKey =
+      comparisonKey(
+        item.product,
+        item.specification
+      );
+
+    if (
+      !vendorProducts.has(
+        vendorKey
+      )
+    ) {
       vendorProducts.set(
-        item.vendor,
-        new Map<string, number>()
+        vendorKey,
+        new Map<
+          string,
+          number
+        >()
       );
     }
 
-    vendorProducts
-      .get(item.vendor)!
-      .set(
-        item.product.toLowerCase().trim(),
+    const vendorMap =
+      vendorProducts.get(
+        vendorKey
+      )!;
+
+    // ----------------------------------------------------------
+    // If the same vendor has duplicate records for the same
+    // product/specification, keep the lowest valid price.
+    // ----------------------------------------------------------
+
+    const existing =
+      vendorMap.get(
+        productKey
+      );
+
+    if (
+      existing === undefined ||
+      item.unitPrice < existing
+    ) {
+      vendorMap.set(
+        productKey,
         item.unitPrice
       );
+    }
   }
 
   // ============================================================
-  // FIND COMMON PRODUCTS
+  // VENDOR DISPLAY NAMES
   // ============================================================
 
+  const vendorDisplayNames =
+    new Map<string, string>();
+
+  for (
+    const item of uniqueItems
+  ) {
+
+    const key =
+      normalize(item.vendor);
+
+    if (
+      !vendorDisplayNames.has(key)
+    ) {
+      vendorDisplayNames.set(
+        key,
+        item.vendor
+      );
+    }
+  }
+
   const vendorNames =
-    Array.from(vendorProducts.keys());
+    Array.from(
+      vendorProducts.keys()
+    );
+
+  // ============================================================
+  // COMMON PRODUCT + SPECIFICATION COMBINATIONS
+  // ============================================================
+  //
+  // A product is considered common only when the EXACT same
+  // product AND specification is quoted by every vendor.
+  //
+  // ============================================================
 
   const commonProducts =
     vendorNames.length > 0
       ? Array.from(
           vendorProducts
-            .get(vendorNames[0])!
+            .get(
+              vendorNames[0]
+            )!
             .keys()
-        ).filter(product =>
-          vendorNames.every(vendor =>
-            vendorProducts
-              .get(vendor)!
-              .has(product)
-          )
+        ).filter(
+          (productKey) =>
+            vendorNames.every(
+              (vendor) =>
+                vendorProducts
+                  .get(vendor)!
+                  .has(
+                    productKey
+                  )
+            )
         )
       : [];
 
   // ============================================================
-  // COMPARE VENDORS USING COMMON PRODUCTS ONLY
+  // VENDOR SUMMARY
   // ============================================================
 
   const vendors =
     vendorNames
-      .map(vendor => {
+      .map((vendorKey) => {
 
         const prices =
           commonProducts.map(
-            product =>
+            (productKey) =>
               vendorProducts
-                .get(vendor)!
-                .get(product)!
+                .get(
+                  vendorKey
+                )!
+                .get(
+                  productKey
+                )!
           );
 
         const total =
@@ -197,21 +537,33 @@ export function compareVendorQuotes(
 
         const average =
           prices.length > 0
-            ? total / prices.length
+            ? total /
+              prices.length
             : 0;
 
         return {
-          vendor,
+          vendor:
+            vendorDisplayNames.get(
+              vendorKey
+            ) ||
+            vendorKey,
+
           commonProducts:
             commonProducts.length,
-          totalPrice: total,
-          averagePrice: average,
+
+          totalPrice:
+            total,
+
+          averagePrice:
+            average,
+
           prices
         };
       })
       .filter(
-        vendor =>
-          vendor.commonProducts > 0
+        (vendor) =>
+          vendor.commonProducts >
+          0
       )
       .sort(
         (a, b) =>
@@ -220,21 +572,24 @@ export function compareVendorQuotes(
       );
 
   // ============================================================
-  // CHEAPEST VENDOR
+  // CHEAPEST / BEST VENDOR
   // ============================================================
 
   let cheapestVendor:
     | any
-    | undefined = undefined;
+    | undefined;
 
-  if (vendors.length > 0) {
+  if (
+    vendors.length > 0
+  ) {
 
     const lowestAverage =
-      vendors[0].averagePrice;
+      vendors[0]
+        .averagePrice;
 
     const cheapestVendors =
       vendors.filter(
-        vendor =>
+        (vendor) =>
           Math.abs(
             vendor.averagePrice -
             lowestAverage
@@ -243,9 +598,25 @@ export function compareVendorQuotes(
 
     cheapestVendor = {
 
+      // --------------------------------------------------------
+      // IMPORTANT:
+      // The formatter expects `vendor`.
+      // --------------------------------------------------------
+
+      vendor:
+        cheapestVendors.length === 1
+          ? cheapestVendors[0].vendor
+          : cheapestVendors
+              .map(
+                (vendor) =>
+                  vendor.vendor
+              )
+              .join(", "),
+
       vendors:
         cheapestVendors.map(
-          vendor => vendor.vendor
+          (vendor) =>
+            vendor.vendor
         ),
 
       averagePrice:
@@ -255,17 +626,74 @@ export function compareVendorQuotes(
         commonProducts.length,
 
       priceTie:
-        cheapestVendors.length > 1
+        cheapestVendors.length >
+        1
     };
   }
+
+  // ============================================================
+  // DEBUG
+  // ============================================================
+
+  console.log(
+    "================================="
+  );
+
+  console.log(
+    "VENDOR COMPARATOR RESULT"
+  );
+
+  console.log(
+    "Raw comparison items:",
+    items.length
+  );
+
+  console.log(
+    "Unique comparison items:",
+    uniqueItems.length
+  );
+
+  console.log(
+    "Vendors:",
+    Array.from(
+      vendorDisplayNames.values()
+    )
+  );
+
+  console.log(
+    "Common product/specifications:",
+    commonProducts
+  );
+
+  console.log(
+    "Cheapest by product/specification:",
+    JSON.stringify(
+      cheapestByProduct,
+      null,
+      2
+    )
+  );
+
+  console.log(
+    "Cheapest vendor:",
+    JSON.stringify(
+      cheapestVendor,
+      null,
+      2
+    )
+  );
+
+  console.log(
+    "================================="
+  );
 
   // ============================================================
   // RETURN
   // ============================================================
 
   return {
-
-    items,
+    items:
+      uniqueItems,
 
     cheapestByProduct,
 
@@ -274,6 +702,5 @@ export function compareVendorQuotes(
     vendors,
 
     commonProducts
-
   };
 }

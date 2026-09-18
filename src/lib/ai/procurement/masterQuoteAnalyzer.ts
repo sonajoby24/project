@@ -1,20 +1,24 @@
 import { analyzePrice } from "../priceAnalyzer";
 
-export interface MasterQuoteAnalysis {
-
-  highPriceProducts: any[];
-
-  missingProducts: any[];
-
-  extraProducts: any[];
-
-  quantityMismatch: any[];
-
-  specificationMismatch: any[];
-
+function normalize(value: string = ""): string {
+  return String(value)
+    .replace(/Â/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
-export function analyzeMasterQuote(quotes: any[]): MasterQuoteAnalysis {
+export interface MasterQuoteAnalysis {
+  highPriceProducts: any[];
+  missingProducts: any[];
+  extraProducts: any[];
+  quantityMismatch: any[];
+  specificationMismatch: any[];
+}
+
+export function analyzeMasterQuote(
+  quotes: any[]
+): MasterQuoteAnalysis {
 
   const result: MasterQuoteAnalysis = {
 
@@ -31,168 +35,297 @@ export function analyzeMasterQuote(quotes: any[]): MasterQuoteAnalysis {
   };
 
   const masterQuote = quotes.find(
-
-    q => q?.QuoteInfo?.[0]?.QuoteType === "Master"
-
+    (q: any) =>
+      normalize(
+        q?.QuoteInfo?.[0]?.QuoteType
+      ) === "master"
   );
 
   if (!masterQuote) {
-
     return result;
-
   }
 
   const masterLines =
-
-    masterQuote.QuoteInfo[0].Qlines || [];
+    masterQuote?.QuoteInfo?.[0]?.Qlines || [];
 
   const transactionalQuotes =
-
     quotes.filter(
-
-      q => q?.QuoteInfo?.[0]?.QuoteType !== "Master"
-
+      (q: any) =>
+        normalize(
+          q?.QuoteInfo?.[0]?.QuoteType
+        ) !== "master"
     );
 
-  transactionalQuotes.forEach((quote) => {
+  transactionalQuotes.forEach(
+    (quote: any) => {
 
-    const info = quote.QuoteInfo?.[0];
+      const info =
+        quote?.QuoteInfo?.[0];
 
-    if (!info) return;
-
-    const vendor =
-
-      info.VendorName || "Unknown Vendor";
-
-    const vendorLines =
-
-      info.Qlines || [];
-
-    masterLines.forEach((master: any) => {
-
-     const line = vendorLines.find(
-  (v: any) =>
-    v.ProductName === master.ProductName &&
-    (v.specValue || "").trim() ===
-      (master.specValue || "").trim()
-);
-
-      if (!line) {
-
-        result.missingProducts.push({
-
-          vendor,
-
-          product: master.ProductName
-
-        });
-
+      if (!info) {
         return;
-
       }
 
-      if (
+      const vendor =
+        info?.VendorName ||
+        "Unknown Vendor";
 
-        Number(line.Quantity) !==
+      const vendorLines =
+        info?.Qlines || [];
 
-        Number(master.Quantity)
+      masterLines.forEach(
+        (master: any) => {
 
-      ) {
+          /*
+           * ============================================================
+           * FIND EXACT PRODUCT + SPECIFICATION MATCH
+           * ============================================================
+           */
 
-        result.quantityMismatch.push({
+          const exactLine =
+            vendorLines.find(
+              (v: any) =>
+                normalize(v?.ProductName) ===
+                  normalize(master?.ProductName) &&
+                normalize(v?.specValue) ===
+                  normalize(master?.specValue)
+            );
 
-          vendor,
+          /*
+           * ============================================================
+           * FIND SAME PRODUCT WITH DIFFERENT SPECIFICATION
+           * ============================================================
+           */
 
-          product: master.ProductName,
+          const sameProductLine =
+            vendorLines.find(
+              (v: any) =>
+                normalize(v?.ProductName) ===
+                normalize(master?.ProductName)
+            );
 
-          masterQty: master.Quantity,
+          /*
+           * ============================================================
+           * PRODUCT NOT QUOTED
+           * ============================================================
+           */
 
-          vendorQty: line.Quantity
+          if (!exactLine && !sameProductLine) {
 
-        });
+            result.missingProducts.push({
 
-      }
+              vendor,
 
-      if (
+              product:
+                master?.ProductName || ""
 
-        (line.specValue || "").trim()
+            });
 
-        !==
+            return;
+          }
 
-        (master.specValue || "").trim()
+          /*
+           * ============================================================
+           * SPECIFICATION MISMATCH
+           * ============================================================
+           */
 
-      ) {
+          if (!exactLine && sameProductLine) {
 
-        result.specificationMismatch.push({
+            result.specificationMismatch.push({
 
-          vendor,
+              vendor,
 
-          product: master.ProductName,
+              product:
+                master?.ProductName || "",
 
-          masterSpec: master.specValue,
+              masterSpec:
+                master?.specValue || "",
 
-          vendorSpec: line.specValue
+              vendorSpec:
+                sameProductLine?.specValue || ""
 
-        });
+            });
 
-      }
+            /*
+             * Continue analysing the quoted line for quantity
+             * and price because the vendor did quote the product.
+             */
 
-      const analysis = analyzePrice(
+            const line =
+              sameProductLine;
 
-        master.ProductName,
+            if (
+              Number(line?.Quantity) !==
+              Number(master?.Quantity)
+            ) {
 
-        Number(line.UnitPrice),
+              result.quantityMismatch.push({
 
-        Number(master.TargetPrice)
+                vendor,
 
+                product:
+                  master?.ProductName || "",
+
+                masterQty:
+                  master?.Quantity,
+
+                vendorQty:
+                  line?.Quantity
+
+              });
+
+            }
+
+            const analysis =
+              analyzePrice(
+                master?.ProductName || "",
+                Number(line?.UnitPrice),
+                Number(master?.TargetPrice)
+              );
+
+            if (analysis.percentage > 0) {
+
+              result.highPriceProducts.push({
+
+                vendor,
+
+                product:
+                  master?.ProductName || "",
+
+                unitPrice:
+                  line?.UnitPrice,
+
+                targetPrice:
+                  master?.TargetPrice,
+
+                analysis
+
+              });
+
+            }
+
+            return;
+          }
+
+          /*
+           * ============================================================
+           * EXACT MATCH FOUND
+           * ============================================================
+           */
+
+          const line =
+            exactLine;
+
+          /*
+           * ============================================================
+           * QUANTITY MISMATCH
+           * ============================================================
+           */
+
+          if (
+            Number(line?.Quantity) !==
+            Number(master?.Quantity)
+          ) {
+
+            result.quantityMismatch.push({
+
+              vendor,
+
+              product:
+                master?.ProductName || "",
+
+              masterQty:
+                master?.Quantity,
+
+              vendorQty:
+                line?.Quantity
+
+            });
+
+          }
+
+          /*
+           * ============================================================
+           * PRICE ANALYSIS
+           * ============================================================
+           */
+
+          const analysis =
+            analyzePrice(
+              master?.ProductName || "",
+              Number(line?.UnitPrice),
+              Number(master?.TargetPrice)
+            );
+
+          if (analysis.percentage > 0) {
+
+            result.highPriceProducts.push({
+
+              vendor,
+
+              product:
+                master?.ProductName || "",
+
+              unitPrice:
+                line?.UnitPrice,
+
+              targetPrice:
+                master?.TargetPrice,
+
+              analysis
+
+            });
+
+          }
+
+        }
       );
 
-      if (analysis.percentage > 0) {
+      /*
+       * ============================================================
+       * EXTRA PRODUCTS
+       * ============================================================
+       */
 
-        result.highPriceProducts.push({
+      vendorLines.forEach(
+        (line: any) => {
 
-          vendor,
+          const exists =
+            masterLines.some(
+              (master: any) =>
+                normalize(
+                  master?.ProductName
+                ) ===
+                  normalize(
+                    line?.ProductName
+                  ) &&
+                normalize(
+                  master?.specValue
+                ) ===
+                  normalize(
+                    line?.specValue
+                  )
+            );
 
-          product: master.ProductName,
+          if (!exists) {
 
-          unitPrice: line.UnitPrice,
+            result.extraProducts.push({
 
-          targetPrice: master.TargetPrice,
+              vendor,
 
-          analysis
+              product:
+                line?.ProductName || ""
 
-        });
+            });
 
-      }
+          }
 
-    });
-
-    vendorLines.forEach((line: any) => {
-
-      const exists = masterLines.find(
-
-        (m: any) =>
-
-          m.ProductName === line.ProductName
-
+        }
       );
 
-      if (!exists) {
-
-        result.extraProducts.push({
-
-          vendor,
-
-          product: line.ProductName
-
-        });
-
-      }
-
-    });
-
-  });
+    }
+  );
 
   return result;
-
 }
