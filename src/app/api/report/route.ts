@@ -699,13 +699,15 @@ const data = normalizeQuoteForReport(rawData);
       );
 
 
-      /*
-       * Generate Master Quote report.
-       *
-       * This report compares the Master quote
-       * against ALL transactional/vendor quotes
-       * belonging to that Master.
-       */
+     /**
+ * Generate Master Quote report.
+ *
+ * The report receives all transactional/vendor quotes
+ * belonging to the selected Master Quote.
+ *
+ * The report generator deterministically selects
+ * the Top 3 child quotes for comparison.
+ */
 
       procurement =
         generateMasterQuoteReport(

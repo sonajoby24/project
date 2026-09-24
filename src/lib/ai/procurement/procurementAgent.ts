@@ -1,8 +1,9 @@
 
-
-const GEMINI_PROCUREMENT_MODEL =
-  process.env.GEMINI_PROCUREMENT_MODEL ||
-  "gemini-3.5-flash";
+import {
+  getLLMClient,
+  getLLMModel,
+  logLLMProvider,
+} from "../llmProvider";
 
 /* ============================================================
    GEMINI PROCUREMENT AI RESULT
@@ -64,25 +65,6 @@ export async function runProcurementAgent(
       2
     )
   );
-
-
-  /* ============================================================
-     GEMINI API KEY
-     ============================================================ */
-
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  console.log(
-    "GEMINI API KEY PRESENT:",
-    Boolean(apiKey)
-  );
-
-  if (!apiKey) {
-    throw new Error(
-      "GEMINI_API_KEY is not configured in .env.local"
-    );
-  }
-
 
   /* ============================================================
      AI INSTRUCTION
@@ -311,6 +293,10 @@ Allowed values for vendor confidence:
 - Low
 
 Return ONLY the JSON object.
+Keep the response concise.
+Keep each reason and risk to one short sentence.
+Do not repeat the same explanation unnecessarily.
+Generate productRecommendations only for products present in the supplied evidence.
 `;
 
 
@@ -323,12 +309,17 @@ Return ONLY the JSON object.
   );
 
  console.log(
-  "🚀 SENDING PROCUREMENT EVIDENCE TO GEMINI"
+  "🚀 SENDING PROCUREMENT EVIDENCE TO LLM"
 );
 
 console.log(
-  "Gemini Procurement Model:",
-  GEMINI_PROCUREMENT_MODEL
+  "LLM Provider:",
+  process.env.LLM_PROVIDER || "gemini"
+);
+
+console.log(
+  "LLM Model:",
+  getLLMModel("procurement")
 );
 
   console.log(
@@ -344,87 +335,119 @@ console.log(
 
   try {
 
-    const response = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_PROCUREMENT_MODEL}:generateContent`,
-      {
-        method: "POST",
+    const client =
+  getLLMClient();
 
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
-        },
+const model =
+  getLLMModel("procurement");
 
-        body: JSON.stringify({
+logLLMProvider("procurement");
 
-          systemInstruction: {
-            parts: [
-              {
-                text: systemInstruction
-              }
-            ]
-          },
+let response: any = null;
 
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: prompt
-                }
-              ]
-            }
-          ],
+const MAX_RETRIES = 3;
 
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 3000,
-            responseMimeType: "application/json"
-          }
+for (
+  let attempt = 1;
+  attempt <= MAX_RETRIES;
+  attempt++
+) {
+  try {
 
-        })
-      }
+    console.log(
+      `🚀 Gemini procurement request attempt ${attempt}/${MAX_RETRIES}`
     );
 
+    response =
+      await client.chat.completions.create({
 
-    /* ============================================================
-       READ GEMINI RESPONSE
-       ============================================================ */
+        model,
 
-    const data = await response.json();
+        temperature: 0.2,
 
+       max_tokens: 3000,
+
+        response_format: {
+          type: "json_object",
+        },
+
+        messages: [
+
+          {
+            role: "system",
+
+            content:
+              systemInstruction,
+          },
+
+          {
+            role: "user",
+
+            content:
+              prompt,
+          },
+
+        ],
+
+      });
+
+    // Request succeeded
+    break;
+
+  } catch (error: any) {
+
+    const status =
+      error?.status ??
+      error?.statusCode ??
+      error?.response?.status;
+
+    console.error(
+      `❌ Gemini request failed on attempt ${attempt}/${MAX_RETRIES}`
+    );
+
+    console.error(
+      "Status:",
+      status
+    );
+
+    console.error(
+      "Error:",
+      error?.message || error
+    );
+
+    // Retry only temporary server errors
+    if (
+      status !== 503 ||
+      attempt === MAX_RETRIES
+    ) {
+      throw error;
+    }
+
+    const delay =
+      1000 * Math.pow(2, attempt - 1);
+
+    console.log(
+      `⏳ Gemini returned 503. Retrying in ${delay}ms...`
+    );
+
+    await new Promise(
+      (resolve) =>
+        setTimeout(resolve, delay)
+    );
+
+  }
+}
+
+  console.log(
+  "LLM FINISH REASON:",
+  response.choices[0]?.finish_reason
+);
 
     /* ============================================================
        HANDLE GEMINI API ERRORS
        ============================================================ */
 
-    if (!response.ok) {
-
-      console.error(
-        "=================================================="
-      );
-
-      console.error(
-        "❌ GEMINI API ERROR"
-      );
-
-      console.error(
-        JSON.stringify(
-          data,
-          null,
-          2
-        )
-      );
-
-      console.error(
-        "=================================================="
-      );
-
-      throw new Error(
-        data?.error?.message ||
-        `Gemini request failed with status ${response.status}`
-      );
-    }
-
+    
 
     /* ============================================================
        GEMINI RESPONSE RECEIVED
@@ -443,25 +466,25 @@ console.log(
     );
 
 
-    const rawText =
-      data?.candidates?.[0]?.content?.parts
-        ?.map((part: any) => part?.text || "")
-        .join("")
-        .trim();
+   const rawText =
+  response
+    .choices[0]
+    ?.message
+    ?.content
+    ?.trim();
 
 
     console.log(
-      "GEMINI RAW RESPONSE:"
+      "LLM RAW RESPONSE:"
     );
 
     console.log(rawText);
 
 
     if (!rawText) {
-
-      throw new Error(
-        "Gemini returned an empty procurement analysis."
-      );
+throw new Error(
+  "LLM returned an empty procurement analysis."
+);
 
     }
 
@@ -540,7 +563,7 @@ console.log(
       );
 
       console.error(
-        "❌ INVALID GEMINI PROCUREMENT JSON"
+        "❌ INVALID PROCUREMENT JSON"
       );
 
       console.error(
@@ -552,9 +575,9 @@ console.log(
       );
 
 
-      throw new Error(
-        "Gemini returned invalid procurement analysis JSON."
-      );
+     throw new Error(
+  "LLM returned invalid procurement analysis JSON."
+);
 
     }
 
@@ -566,7 +589,7 @@ console.log(
     );
 
     console.error(
-      "❌ GEMINI PROCUREMENT AGENT ERROR"
+      "❌ PROCUREMENT AGENT ERROR"
     );
 
     console.error(

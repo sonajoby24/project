@@ -1,25 +1,29 @@
-import OpenAI from "openai";
+import {
+  getLLMClient,
+  getLLMModel,
+  logLLMProvider,
+} from "../llmProvider";
+
 import { RetrievalPlan } from "../types/planner";
 import { PLANNER_PROMPT } from "../llmPrompts/plannerPrompt";
-
-const client = new OpenAI({
-  baseURL:
-    "https://generativelanguage.googleapis.com/v1beta/openai/",
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
-const GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 export async function createPlan(
   userQuestion: string,
   nlu: any
 ): Promise<RetrievalPlan> {
 
-  const completion =
-    await client.chat.completions.create({
+ const client =
+  getLLMClient();
 
-      model: GEMINI_MODEL,
+const model =
+  getLLMModel("default");
+
+logLLMProvider("default");
+
+const completion =
+  await client.chat.completions.create({
+
+    model,
 
       temperature: 0,
 

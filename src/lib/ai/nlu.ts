@@ -1,13 +1,8 @@
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  baseURL:
-    "https://generativelanguage.googleapis.com/v1beta/openai/",
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
-const GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+import {
+  getLLMClient,
+  getLLMModel,
+  logLLMProvider,
+} from "./llmProvider";
 
 export type Intent =
   | "PRODUCT_SEARCH"
@@ -158,12 +153,17 @@ export async function understandQuestion(
   question: string
 ): Promise<NLUResult> {
   try {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not configured");
-    }
 
+    const client =
+  getLLMClient();
+
+const model =
+  getLLMModel("default");
+
+logLLMProvider("default");
+  
     const completion = await client.chat.completions.create({
-      model: GEMINI_MODEL,
+     model,
       temperature: 0,
       max_tokens: 300,
 

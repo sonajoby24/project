@@ -11,8 +11,6 @@ import { runProcurementAnalysis } from "./procurement/procurementEngine";
 import { createPlan } from "./planner/planner";
 import { runReasoner } from "./reasoning/reasoner";
 
-import OpenAI from "openai";
-
 import { SYSTEM_PROMPT } from "./prompts";
 
 import { retrieveEvidence } from "./retrieval/retrieval";
@@ -22,14 +20,11 @@ import {
   formatConversationHistory,
 } from "./memory";
 
-// ============================================================
-// OPENROUTER CLIENT
-// ============================================================
-
-const client = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+import {
+  getLLMClient,
+  getLLMModel,
+  logLLMProvider,
+} from "./llmProvider";
 
 // ============================================================
 // CLEAN VALUE
@@ -952,11 +947,18 @@ if (databaseData.intent === "SHOW_ALL_VENDORS") {
       databaseString
     );
 
+const client =
+  getLLMClient();
+
+const model =
+  getLLMModel("default");
+
+logLLMProvider("default");
+
     const completion =
       await client.chat.completions.create({
 
-        model:
-          "openai/gpt-3.5-turbo",
+       model,
 
         max_tokens:
           1000,

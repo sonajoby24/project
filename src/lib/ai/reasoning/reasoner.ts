@@ -1,10 +1,11 @@
-import OpenAI from "openai";
+
 import { ReasoningResult } from "../types/reasoning";
 
-const client = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+import {
+  getLLMClient,
+  getLLMModel,
+  logLLMProvider,
+} from "../llmProvider";
 
 export async function runReasoner(
   question: string,
@@ -335,10 +336,19 @@ export async function runReasoner(
   );
 
 
+  const client =
+  getLLMClient();
+
+const model =
+  getLLMModel("default");
+
+logLLMProvider("default");
+
+
   const completion =
     await client.chat.completions.create({
 
-      model: "openai/gpt-4o-mini",
+    model,
 
       temperature: 0,
 

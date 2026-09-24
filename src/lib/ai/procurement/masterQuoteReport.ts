@@ -87,6 +87,53 @@ function getProductNameKey(
   );
 }
 
+function getQuantity(line: any): number | null {
+  const raw =
+    line?.Quantity ??
+    line?.quantity ??
+    "";
+
+  if (
+    raw === "" ||
+    raw === null ||
+    raw === undefined
+  ) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
+
+function getUnitPrice(line: any): number | null {
+  const raw =
+    line?.UnitPrice ??
+    line?.unitPrice ??
+    line?.QuotedPrice ??
+    line?.quotedPrice ??
+    line?.Price ??
+    line?.price ??
+    "";
+
+  if (
+    raw === "" ||
+    raw === null ||
+    raw === undefined
+  ) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
 export function generateMasterQuoteReport(
   quotes: any[],
   selectedQuote?: any
@@ -190,44 +237,347 @@ export function generateMasterQuoteReport(
    * are vendor/child quotations for this report.
    */
 
-  const vendorQuotes =
-    Array.from(
-      new Map(
-        allQuotes
-          .filter(
-            (quote: any) =>
-              getQuoteType(
+  const allVendorQuotes =
+  Array.from(
+    new Map(
+      allQuotes
+        .filter(
+          (quote: any) =>
+            getQuoteType(
+              quote
+            ) !== "master" &&
+            getParentQuoteId(
+              quote
+            ) === masterQuoteId
+        )
+        .map(
+          (
+            quote: any,
+            index: number
+          ) => {
+            const info =
+              getQuoteInfo(
                 quote
-              ) !== "master" &&
-              getParentQuoteId(
-                quote
-              ) === masterQuoteId
-          )
-          .map(
-            (
-              quote: any,
-              index: number
-            ) => {
-              const info =
-                getQuoteInfo(
-                  quote
-                );
+              );
 
-              const uniqueKey =
-                String(
-                  info?.QuoteId ||
-                    quote?.id ||
-                    `${info?.VendorName || "Unknown Vendor"}-${info?.QuoteNumber || index}`
-                );
+            const uniqueKey =
+              String(
+                info?.QuoteId ||
+                  quote?.id ||
+                  `${info?.VendorName || "Unknown Vendor"}-${info?.QuoteNumber || index}`
+              );
 
-              return [
-                uniqueKey,
-                quote
-              ];
-            }
-          )
-      ).values()
+            return [
+              uniqueKey,
+              quote
+            ];
+          }
+        )
+    ).values()
+  );
+
+  /**
+ * ============================================================
+ * SELECT TOP 3 CHILD QUOTES
+ * ============================================================
+ *
+ * Ranking rule:
+ *
+ * 1. Consider only products from the Master Quote.
+ * 2. A child quote must actually quote the Master product.
+ * 3. Quantity must exist before its unit price is used
+ *    for price comparison.
+ * 4. Quotes with comparable quantity + unit price
+ *    rank before quotes without comparable pricing.
+ * 5. Lower comparable unit-price total ranks higher.
+ * 6. Lower average unit price is used as a tie-breaker.
+ *
+ * If quantity is missing, the line is reported as
+ * "Quantity Missing" and its unit price is not used
+ * for Top-3 ranking.
+ */
+
+const rankedVendorQuotes =
+  allVendorQuotes.map(
+    (
+      vendorQuote: any
+    ) => {
+
+      const vendorInfo =
+        getQuoteInfo(
+          vendorQuote
+        );
+
+      const vendorLines =
+        Array.isArray(
+          vendorInfo?.Qlines
+        )
+          ? vendorInfo.Qlines
+          : [];
+
+      let quotedProductCount = 0;
+
+      let comparableProductCount = 0;
+
+      let comparableUnitPriceTotal = 0;
+
+      let missingQuantityCount = 0;
+
+      masterLines.forEach(
+        (
+          masterLine: any
+        ) => {
+
+          const masterProduct =
+            normalize(
+              masterLine?.ProductName
+            );
+
+          const masterSpec =
+            normalize(
+              masterLine?.specValue
+            );
+
+          /**
+           * First try exact Product + Specification.
+           */
+          let vendorLine =
+            vendorLines.find(
+              (
+                line: any
+              ) =>
+                normalize(
+                  line?.ProductName
+                ) === masterProduct &&
+                normalize(
+                  line?.specValue
+                ) === masterSpec
+            );
+
+          /**
+           * If exact specification is not available,
+           * try the same product.
+           */
+          if (!vendorLine) {
+            vendorLine =
+              vendorLines.find(
+                (
+                  line: any
+                ) =>
+                  normalize(
+                    line?.ProductName
+                  ) === masterProduct
+              );
+          }
+
+          /**
+           * Vendor did not quote this Master product.
+           */
+          if (!vendorLine) {
+            return;
+          }
+
+          quotedProductCount++;
+
+          const unitPrice =
+            getUnitPrice(
+              vendorLine
+            );
+
+          const quantity =
+            getQuantity(
+              vendorLine
+            );
+
+          /**
+           * Quantity missing:
+           * mention it in the report later,
+           * but do not use it as a quantity match.
+           */
+          if (
+            quantity === null
+          ) {
+            missingQuantityCount++;
+          }
+
+         /**
+ * Compare unit price ONLY when quantity exists.
+ */
+          if (
+  quantity !== null &&
+  unitPrice !== null
+) {
+  comparableProductCount++;
+
+  comparableUnitPriceTotal +=
+    unitPrice;
+}
+        }
+      );
+
+      const averageUnitPrice =
+        comparableProductCount > 0
+          ? comparableUnitPriceTotal /
+            comparableProductCount
+          : Number.POSITIVE_INFINITY;
+
+      return {
+        quote: vendorQuote,
+
+        quotedProductCount,
+
+        comparableProductCount,
+
+        comparableUnitPriceTotal,
+
+        averageUnitPrice,
+
+        missingQuantityCount
+      };
+    }
+  );
+
+/**
+ * Rank child quotes.
+ *
+ * Ranking is based on comparable unit price.
+ *
+ * 1. Quotes with an actual comparable quantity + unit price
+ *    rank before quotes without comparable pricing.
+ * 2. Lower comparable unit-price total ranks higher.
+ * 3. Lower average unit price is used as a tie-breaker.
+ *
+ * Quantity-missing lines are not used for price comparison.
+ * They are reported separately as "Quantity Missing".
+ */
+rankedVendorQuotes.sort(
+  (
+    a: any,
+    b: any
+  ) => {
+
+    const aHasComparablePrice =
+      a.comparableProductCount > 0;
+
+    const bHasComparablePrice =
+      b.comparableProductCount > 0;
+
+    /*
+     * Quotes with an actual comparable price
+     * must come before quotes where price
+     * cannot be compared.
+     */
+    if (
+      aHasComparablePrice !==
+      bHasComparablePrice
+    ) {
+      return aHasComparablePrice
+        ? -1
+        : 1;
+    }
+
+    /*
+     * Lower comparable unit-price total
+     * ranks higher.
+     */
+    if (
+      a.comparableUnitPriceTotal !==
+      b.comparableUnitPriceTotal
+    ) {
+      return (
+        a.comparableUnitPriceTotal -
+        b.comparableUnitPriceTotal
+      );
+    }
+
+    /*
+     * Tie-breaker:
+     * lower average unit price.
+     */
+    return (
+      a.averageUnitPrice -
+      b.averageUnitPrice
     );
+  }
+);
+
+/**
+ * Only the Top 3 child quotes are used
+ * for the Master Quote comparison.
+ */
+const vendorQuotes =
+  rankedVendorQuotes
+    .slice(0, 3)
+    .map(
+      (
+        item: any
+      ) => item.quote
+    );
+
+console.log(
+  "ALL CHILD QUOTES:",
+  allVendorQuotes.length
+);
+
+console.log(
+  "TOP 3 CHILD QUOTES:",
+  vendorQuotes.length
+);
+
+console.log(
+  "TOP 3 CHILD QUOTE RANKING:",
+  rankedVendorQuotes
+    .slice(0, 3)
+    .map(
+      (
+        item: any,
+        index: number
+      ) => {
+
+        const info =
+          getQuoteInfo(
+            item.quote
+          );
+
+        return {
+          rank:
+            index + 1,
+
+          vendor:
+            info?.VendorName ||
+            "Unknown Vendor",
+
+          quoteId:
+            getQuoteId(
+              item.quote
+            ),
+
+          quoteNumber:
+            info?.QuoteNumber ||
+            "",
+
+          quotedProductCount:
+            item.quotedProductCount,
+
+          comparableProductCount:
+            item.comparableProductCount,
+
+          comparableUnitPriceTotal:
+            money(
+              item.comparableUnitPriceTotal
+            ),
+
+          averageUnitPrice:
+            money(
+              item.averageUnitPrice
+            ),
+
+          missingQuantityCount:
+            item.missingQuantityCount
+        };
+      }
+    )
+);
 
   console.log(
     "===================================="
@@ -559,14 +909,14 @@ export function generateMasterQuoteReport(
             ];
 
           const vendorQty =
-            numberValue(
-              vendorLine?.Quantity
-            );
+  getQuantity(
+    vendorLine
+  );
 
-          const vendorPrice =
-            numberValue(
-              vendorLine?.UnitPrice
-            );
+const vendorPrice =
+  getUnitPrice(
+    vendorLine
+  );
 
           /*
            * ------------------------------------------------------
@@ -574,9 +924,10 @@ export function generateMasterQuoteReport(
            * ------------------------------------------------------
            */
 
-          const quantityMatch =
-            vendorQty ===
-            requestedQty;
+         const quantityMatch =
+  vendorQty !== null &&
+  vendorQty ===
+    requestedQty;
 
           /*
            * ------------------------------------------------------
@@ -590,11 +941,12 @@ export function generateMasterQuoteReport(
            * AND vendor price is not above target
            */
 
-          const priceMatch =
-            specificationMatch &&
-            quantityMatch &&
-            vendorPrice <=
-              targetPrice;
+         const priceMatch =
+  specificationMatch &&
+  quantityMatch &&
+  vendorPrice !== null &&
+  vendorPrice <=
+    targetPrice;
 
           /*
            * ------------------------------------------------------
@@ -602,11 +954,13 @@ export function generateMasterQuoteReport(
            * ------------------------------------------------------
            */
 
-          const priceDifference =
-            money(
-              vendorPrice -
-                targetPrice
-            );
+         const priceDifference =
+  vendorPrice !== null
+    ? money(
+        vendorPrice -
+          targetPrice
+      )
+    : null;
 
           /*
            * ------------------------------------------------------
@@ -614,11 +968,13 @@ export function generateMasterQuoteReport(
            * ------------------------------------------------------
            */
 
-          const totalVendorCost =
-            money(
-              vendorPrice *
-                requestedQty
-            );
+         const totalVendorCost =
+  vendorPrice !== null
+    ? money(
+        vendorPrice *
+          requestedQty
+      )
+    : 0;
 
           /*
            * ------------------------------------------------------
@@ -626,28 +982,39 @@ export function generateMasterQuoteReport(
            * ------------------------------------------------------
            */
 
-          let recommendation =
-            "Not Recommended";
+        let recommendation =
+  "Not Recommended";
 
-          if (
-            !specificationMatch
-          ) {
-            recommendation =
-              "Specification Mismatch";
-          } else if (
-            !quantityMatch
-          ) {
-            recommendation =
-              "Insufficient Quantity";
-          } else if (
-            !priceMatch
-          ) {
-            recommendation =
-              "Above Target";
-          } else {
-            recommendation =
-              "Recommended";
-          }
+if (
+  !specificationMatch
+) {
+  recommendation =
+    "Specification Mismatch";
+} else if (
+  vendorQty === null
+) {
+  recommendation =
+    "Quantity Missing";
+} else if (
+  !quantityMatch
+) {
+  recommendation =
+    "Insufficient Quantity";
+} else if (
+  vendorPrice === null
+) {
+  recommendation =
+    "Price Missing";
+} else if (
+  !priceMatch
+) {
+  recommendation =
+    "Above Target";
+} else {
+  recommendation =
+    "Recommended";
+}
+
 
           matchingVendors.push({
             vendor,
@@ -664,13 +1031,22 @@ export function generateMasterQuoteReport(
               vendorInfo?.QuoteType ??
               "Transactional",
 
-            quantity:
-              vendorQty,
+           quantity:
+  vendorQty,
 
-            vendorPrice:
-              money(
-                vendorPrice
-              ),
+quantityStatus:
+  vendorQty === null
+    ? "Quantity Missing"
+    : quantityMatch
+      ? "Quantity Match"
+      : "Quantity Mismatch",
+
+vendorPrice:
+  vendorPrice !== null
+    ? money(
+        vendorPrice
+      )
+    : null,
 
             priceDifference,
 
@@ -709,47 +1085,16 @@ export function generateMasterQuoteReport(
       if (
         matchingVendors.length === 0
       ) {
-        const productExistsInAnyVendor =
-          vendorQuotes.some(
-            (vendorQuote: any) => {
-              const vendorInfo =
-                getQuoteInfo(
-                  vendorQuote
-                );
+       missingProducts.push({
+  productName:
+    master?.ProductName ??
+    "",
 
-              const vendorLines =
-                Array.isArray(
-                  vendorInfo?.Qlines
-                )
-                  ? vendorInfo.Qlines
-                  : [];
-
-              return vendorLines.some(
-                (line: any) =>
-                  normalize(
-                    line?.ProductName
-                  ) ===
-                  normalize(
-                    master?.ProductName
-                  )
-              );
-            }
-          );
-
-        if (
-          !productExistsInAnyVendor
-        ) {
-          missingProducts.push({
-            productName:
-              master?.ProductName ??
-              "",
-
-            specValue:
-              cleanSpec(
-                master?.specValue
-              )
-          });
-        }
+  specValue:
+    cleanSpec(
+      master?.specValue
+    )
+});
 
         products.push({
           productName:
@@ -784,15 +1129,11 @@ export function generateMasterQuoteReport(
 
           priceTie: false,
 
-          recommendation:
-            productExistsInAnyVendor
-              ? "Specification Mismatch"
-              : "Not Quoted",
+        recommendation:
+  "Not Quoted",
 
-          specStatus:
-            productExistsInAnyVendor
-              ? "Specification Mismatch"
-              : "Missing Product"
+specStatus:
+  "Not Quoted"
         });
 
         return;
@@ -838,21 +1179,32 @@ export function generateMasterQuoteReport(
        * cheapest-price field.
        */
 
-      eligibleVendors.sort(
-        (
-          a: any,
-          b: any
-        ) =>
-          numberValue(
-            a.vendorPrice
-          ) -
-          numberValue(
-            b.vendorPrice
-          )
-      );
+    const priceComparableVendors =
+  eligibleVendors.filter(
+    (vendor: any) =>
+      vendor.vendorPrice !== null
+  );
 
-      const cheapest =
-        eligibleVendors[0];
+const priceCandidates =
+  priceComparableVendors.length > 0
+    ? priceComparableVendors
+    : eligibleVendors;
+
+priceCandidates.sort(
+  (
+    a: any,
+    b: any
+  ) =>
+    numberValue(
+      a.vendorPrice
+    ) -
+    numberValue(
+      b.vendorPrice
+    )
+);
+
+const cheapest =
+  priceCandidates[0];
 
       /*
        * ==========================================================
@@ -860,17 +1212,15 @@ export function generateMasterQuoteReport(
        * ==========================================================
        */
 
-      const priceTie =
-        eligibleVendors.length > 1 &&
-        eligibleVendors.every(
-          (vendor: any) =>
-            numberValue(
-              vendor.vendorPrice
-            ) ===
-            numberValue(
-              cheapest.vendorPrice
-            )
-        );
+     const priceTie =
+  priceCandidates.length > 1 &&
+  cheapest.vendorPrice !== null &&
+  priceCandidates.every(
+    (vendor: any) =>
+      vendor.vendorPrice !== null &&
+      vendor.vendorPrice ===
+        cheapest.vendorPrice
+  );
 
       /*
        * ==========================================================
@@ -879,44 +1229,53 @@ export function generateMasterQuoteReport(
        */
 
       const cheapestSavings =
-        money(
-          (
-            targetPrice -
-            numberValue(
-              cheapest.vendorPrice
-            )
-          ) *
-            requestedQty
-        );
+  cheapest.vendorPrice !== null
+    ? money(
+        (
+          targetPrice -
+          cheapest.vendorPrice
+        ) *
+          requestedQty
+      )
+    : 0;
 
       /*
        * ==========================================================
        * PRODUCT RECOMMENDATION
        * ==========================================================
        */
+let productRecommendation =
+  "Not Recommended";
 
-      let productRecommendation =
-        "Not Recommended";
-
-      if (
-        !cheapest.specificationMatch
-      ) {
-        productRecommendation =
-          "Not Recommended";
-      } else if (
-        !cheapest.quantityMatch
-      ) {
-        productRecommendation =
-          "Insufficient Quantity";
-      } else if (
-        !cheapest.priceMatch
-      ) {
-        productRecommendation =
-          "Above Target";
-      } else {
-        productRecommendation =
-          "Recommended";
-      }
+if (
+  !cheapest.specificationMatch
+) {
+  productRecommendation =
+    "Specification Mismatch";
+} else if (
+  cheapest.quantity === null
+) {
+  productRecommendation =
+    "Quantity Missing";
+} else if (
+  !cheapest.quantityMatch
+) {
+  productRecommendation =
+    "Insufficient Quantity";
+} else if (
+  cheapest.vendorPrice === null
+) {
+  productRecommendation =
+    "Price Missing";
+} else if (
+  !cheapest.priceMatch
+) {
+  productRecommendation =
+    "Above Target";
+} else {
+  productRecommendation =
+    "Recommended";
+}
 
       /*
        * ==========================================================
@@ -953,10 +1312,12 @@ export function generateMasterQuoteReport(
         cheapestVendorQuoteNumber:
           cheapest.quoteNumber,
 
-        cheapestPrice:
-          money(
-            cheapest.vendorPrice
-          ),
+       cheapestPrice:
+  cheapest.vendorPrice !== null
+    ? money(
+        cheapest.vendorPrice
+      )
+    : null,
 
         cheapestSavings,
 
@@ -1185,15 +1546,13 @@ export function generateMasterQuoteReport(
           return total;
         }
 
-        const fullyMatching =
-          product.vendors.filter(
-            (vendor: any) =>
-              vendor.quantityMatch ===
-                true &&
-              vendor.specificationMatch ===
-                true
-          );
-
+       const fullyMatching =
+  product.vendors.filter(
+    (vendor: any) =>
+      vendor.quantityMatch === true &&
+      vendor.specificationMatch === true &&
+      vendor.vendorPrice !== null
+  );
         if (
           fullyMatching.length === 0
         ) {
@@ -1345,41 +1704,43 @@ export function generateMasterQuoteReport(
 
           exact++;
 
-          const vendorQty =
-            numberValue(
-              vendorLine?.Quantity
-            );
+         const vendorQty =
+  getQuantity(
+    vendorLine
+  );
 
-          const masterQty =
-            numberValue(
-              master?.Quantity
-            );
+const masterQty =
+  getQuantity(
+    master
+  );
 
-          const vendorPrice =
-            numberValue(
-              vendorLine?.UnitPrice
-            );
+const vendorPrice =
+  getUnitPrice(
+    vendorLine
+  );
 
           const targetPrice =
             numberValue(
               master?.TargetPrice
             );
 
-          if (
-            vendorQty ===
-            masterQty
-          ) {
-            quantityMatched++;
-          }
+         if (
+  vendorQty !== null &&
+  masterQty !== null &&
+  vendorQty === masterQty
+) {
+  quantityMatched++;
+}
 
-          if (
-            vendorQty ===
-              masterQty &&
-            vendorPrice <=
-              targetPrice
-          ) {
-            priceMatched++;
-          }
+if (
+  vendorQty !== null &&
+  masterQty !== null &&
+  vendorQty === masterQty &&
+  vendorPrice !== null &&
+  vendorPrice <= targetPrice
+) {
+  priceMatched++;
+}
         }
       );
 
