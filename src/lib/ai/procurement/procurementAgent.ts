@@ -345,7 +345,7 @@ logLLMProvider("procurement");
 
 let response: any = null;
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 1;
 
 for (
   let attempt = 1;

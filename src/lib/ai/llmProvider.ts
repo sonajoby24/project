@@ -1,11 +1,11 @@
 import OpenAI from "openai";
 
-export type LLMProvider =
-  | "gemini"
-  | "openrouter";
+export type LLMProvider = "gemini";
 
 // ============================================================
 // GET CURRENT LLM PROVIDER
+//
+// Catalogix uses Gemini as the only LLM provider.
 // ============================================================
 
 export function getLLMProvider(): LLMProvider {
@@ -18,19 +18,15 @@ export function getLLMProvider(): LLMProvider {
       .trim()
       .toLowerCase();
 
-  if (
-    provider !== "gemini" &&
-    provider !== "openrouter"
-  ) {
+  if (provider !== "gemini") {
 
     console.warn(
       `Invalid LLM_PROVIDER "${provider}". Falling back to Gemini.`
     );
 
-    return "gemini";
   }
 
-  return provider as LLMProvider;
+  return "gemini";
 }
 
 // ============================================================
@@ -39,48 +35,13 @@ export function getLLMProvider(): LLMProvider {
 
 export function getLLMClient(): OpenAI {
 
-  const provider =
-    getLLMProvider();
-
-  // ==========================================================
-  // GEMINI
-  // ==========================================================
-
-  if (provider === "gemini") {
-
-    const apiKey =
-      process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-
-      throw new Error(
-        "GEMINI_API_KEY is not configured."
-      );
-
-    }
-
-    return new OpenAI({
-
-      baseURL:
-        "https://generativelanguage.googleapis.com/v1beta/openai/",
-
-      apiKey,
-
-    });
-
-  }
-
-  // ==========================================================
-  // OPENROUTER
-  // ==========================================================
-
   const apiKey =
-    process.env.OPENROUTER_API_KEY;
+    process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
 
     throw new Error(
-      "OPENROUTER_API_KEY is not configured."
+      "GEMINI_API_KEY is not configured."
     );
 
   }
@@ -88,7 +49,7 @@ export function getLLMClient(): OpenAI {
   return new OpenAI({
 
     baseURL:
-      "https://openrouter.ai/api/v1",
+      "https://generativelanguage.googleapis.com/v1beta/openai/",
 
     apiKey,
 
@@ -106,53 +67,19 @@ export function getLLMModel(
     | "procurement" = "default"
 ): string {
 
-  const provider =
-    getLLMProvider();
-
-  // ==========================================================
-  // GEMINI MODELS
-  // ==========================================================
-
-  if (provider === "gemini") {
-
-    if (
-      type === "procurement"
-    ) {
-
-      return (
-        process.env.GEMINI_PROCUREMENT_MODEL ||
-        process.env.GEMINI_MODEL ||
-        "gemini-3.5-flash"
-      );
-
-    }
+  if (type === "procurement") {
 
     return (
+      process.env.GEMINI_PROCUREMENT_MODEL ||
       process.env.GEMINI_MODEL ||
-      "gemini-3.5-flash-lite"
-    );
-
-  }
-
-  // ==========================================================
-  // OPENROUTER MODELS
-  // ==========================================================
-
-  if (
-    type === "procurement"
-  ) {
-
-    return (
-      process.env.OPENROUTER_PROCUREMENT_MODEL ||
-      process.env.OPENROUTER_MODEL ||
-      "openai/gpt-4o-mini"
+      "gemini-3.5-flash"
     );
 
   }
 
   return (
-    process.env.OPENROUTER_MODEL ||
-    "openai/gpt-4o-mini"
+    process.env.GEMINI_MODEL ||
+    "gemini-3.5-flash-lite"
   );
 
 }

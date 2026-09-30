@@ -323,6 +323,8 @@ const rankedVendorQuotes =
 
       let missingQuantityCount = 0;
 
+      const usedVendorIndexes = new Set<number>();
+
       masterLines.forEach(
         (
           masterLine: any
@@ -341,41 +343,35 @@ const rankedVendorQuotes =
           /**
            * First try exact Product + Specification.
            */
-          let vendorLine =
-            vendorLines.find(
-              (
-                line: any
-              ) =>
-                normalize(
-                  line?.ProductName
-                ) === masterProduct &&
-                normalize(
-                  line?.specValue
-                ) === masterSpec
-            );
+          let vendorIndex = vendorLines.findIndex(
+  (line: any, index: number) =>
+    !usedVendorIndexes.has(index) &&
+    normalize(line?.ProductName) === masterProduct &&
+    normalize(line?.specValue) === masterSpec
+);
 
           /**
            * If exact specification is not available,
            * try the same product.
            */
-          if (!vendorLine) {
-            vendorLine =
-              vendorLines.find(
-                (
-                  line: any
-                ) =>
-                  normalize(
-                    line?.ProductName
-                  ) === masterProduct
-              );
-          }
+         if (vendorIndex === -1) {
+  vendorIndex = vendorLines.findIndex(
+    (line: any, index: number) =>
+      !usedVendorIndexes.has(index) &&
+      normalize(line?.ProductName) === masterProduct
+  );
+}
 
           /**
            * Vendor did not quote this Master product.
            */
-          if (!vendorLine) {
-            return;
-          }
+         if (vendorIndex === -1) {
+  return;
+}
+
+usedVendorIndexes.add(vendorIndex);
+
+const vendorLine = vendorLines[vendorIndex];
 
           quotedProductCount++;
 
@@ -513,6 +509,14 @@ const vendorQuotes =
         item: any
       ) => item.quote
     );
+
+const top3BestCombinedCost =
+  rankedVendorQuotes.length > 0
+    ? money(
+        rankedVendorQuotes[0]
+          .comparableUnitPriceTotal
+      )
+    : 0;
 
 console.log(
   "ALL CHILD QUOTES:",
@@ -1531,63 +1535,8 @@ if (
    * Only actual Firestore prices are used.
    */
 
-  const bestCombinedVendorCost =
-    products.reduce(
-      (
-        total: number,
-        product: any
-      ) => {
-        if (
-          !Array.isArray(
-            product.vendors
-          ) ||
-          product.vendors.length === 0
-        ) {
-          return total;
-        }
-
-       const fullyMatching =
-  product.vendors.filter(
-    (vendor: any) =>
-      vendor.quantityMatch === true &&
-      vendor.specificationMatch === true &&
-      vendor.vendorPrice !== null
-  );
-        if (
-          fullyMatching.length === 0
-        ) {
-          return total;
-        }
-
-        const cheapest =
-          fullyMatching.reduce(
-            (
-              best: any,
-              current: any
-            ) =>
-              numberValue(
-                current.vendorPrice
-              ) <
-              numberValue(
-                best.vendorPrice
-              )
-                ? current
-                : best
-          );
-
-        return (
-          total +
-          numberValue(
-            cheapest.vendorPrice
-          ) *
-            numberValue(
-              product.requestedQty
-            )
-        );
-      },
-      0
-    );
-
+const bestCombinedVendorCost =
+  top3BestCombinedCost;
   /*
    * ============================================================
    * VENDOR COVERAGE

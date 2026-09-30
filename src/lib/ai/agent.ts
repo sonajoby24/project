@@ -446,7 +446,117 @@ export async function runAgent(
       rankResults(
         databaseData
       );
+  // ==========================================================
+// DIRECT QUOTE DETAILS RESPONSE
+// ==========================================================
 
+const asksQuoteDetails =
+  /\b(details?|information|info|about)\b.*\bquote\b/i.test(
+    userMessage
+  ) ||
+  /\bquote\b.*\b(details?|information|info)\b/i.test(
+    userMessage
+  );
+
+if (
+  asksQuoteDetails &&
+  Array.isArray(databaseData.quotes) &&
+  databaseData.quotes.length > 0
+) {
+  const quoteNumberMatch =
+    userMessage.match(/\b\d{1,8}\b/) ||
+    rewrittenQuery.match(/\b\d{1,8}\b/);
+
+  const requestedQuoteNumber =
+    quoteNumberMatch?.[0]
+      ? quoteNumberMatch[0].padStart(8, "0")
+      : null;
+
+  const matchingQuotes =
+    databaseData.quotes.filter((quote: any) => {
+
+      const quoteInfo =
+        quote?.QuoteInfo?.[0] || quote;
+
+      const quoteNumber =
+        clean(
+          quoteInfo?.QuoteNumber
+        ).padStart(8, "0");
+
+      return (
+        !requestedQuoteNumber ||
+        quoteNumber === requestedQuoteNumber
+      );
+    });
+
+  if (matchingQuotes.length > 0) {
+
+    return matchingQuotes
+      .map((quote: any) => {
+
+        const info =
+          quote?.QuoteInfo?.[0] || quote;
+
+        const quoteNumber =
+          clean(
+            info?.QuoteNumber
+          ) ||
+          "Not Available";
+
+        const quoteId =
+          clean(
+            info?.QuoteId
+          ) ||
+          "Not Available";
+
+        const quoteType =
+          clean(
+            info?.QuoteType
+          ) ||
+          "Not Available";
+
+        const vendor =
+          clean(
+            info?.VendorName
+          ) ||
+          "Not Available";
+
+        const parentQuoteId =
+          clean(
+            info?.ParentQuoteID
+          ) ||
+          "Not Available";
+
+        const quoteName =
+          clean(
+            info?.QuoteName
+          ) ||
+          "Not Available";
+
+        let output =
+          `Quote Number: ${quoteNumber}\n`;
+
+        output +=
+          `Quote ID: ${quoteId}\n`;
+
+        output +=
+          `Quote Name: ${quoteName}\n`;
+
+        output +=
+          `Quote Type: ${quoteType}\n`;
+
+        output +=
+          `Vendor Name: ${vendor}\n`;
+
+        output +=
+          `Parent Quote ID: ${parentQuoteId}`;
+
+        return output;
+
+      })
+      .join("\n\n");
+  }
+}
     // ==========================================================
     // 5. PROCUREMENT ANALYSIS
     // ==========================================================
