@@ -1,24 +1,88 @@
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
-const client = new OpenAI({
+// ============================================================
+// CREATE GEMINI EMBEDDING
+//
+// Catalogix uses Gemini for embeddings.
+// OpenRouter is not used.
+// ============================================================
 
-    baseURL: "https://openrouter.ai/api/v1",
+export async function createEmbedding(
+  text: string
+): Promise<number[]> {
 
-    apiKey: process.env.OPENROUTER_API_KEY
+  console.log(
+    "================================="
+  );
 
-});
+  console.log(
+    "EMBEDDING PROVIDER: gemini"
+  );
 
-export async function createEmbedding(text: string) {
+  console.log(
+    "================================="
+  );
 
-    const response =
-        await client.embeddings.create({
+  const apiKey =
+    process.env.GEMINI_API_KEY;
 
-            model: "text-embedding-3-small",
+  if (!apiKey) {
 
-            input: text
+    throw new Error(
+      "GEMINI_API_KEY is not configured."
+    );
 
-        });
+  }
 
-    return response.data[0].embedding;
+  const ai =
+    new GoogleGenAI({
+      apiKey
+    });
+
+  const model =
+    process.env.GEMINI_EMBEDDING_MODEL ||
+    "gemini-embedding-2";
+
+  const outputDimensionality =
+    Number(
+      process.env.GEMINI_EMBEDDING_DIMENSION ||
+      "1536"
+    );
+
+  const response =
+    await ai.models.embedContent({
+
+      model,
+
+      contents: text,
+
+      config: {
+
+        outputDimensionality
+
+      }
+
+    });
+
+  const embedding =
+    response.embeddings?.[0]?.values;
+
+  if (
+    !embedding ||
+    embedding.length === 0
+  ) {
+
+    throw new Error(
+      "Gemini embedding response was empty."
+    );
+
+  }
+
+  console.log(
+    "Gemini embedding dimension:",
+    embedding.length
+  );
+
+  return embedding;
 
 }
