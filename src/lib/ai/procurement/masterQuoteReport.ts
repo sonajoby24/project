@@ -502,13 +502,9 @@ rankedVendorQuotes.sort(
  * for the Master Quote comparison.
  */
 const vendorQuotes =
-  rankedVendorQuotes
-    .slice(0, 3)
-    .map(
-      (
-        item: any
-      ) => item.quote
-    );
+  rankedVendorQuotes.map(
+    (item: any) => item.quote
+  );
 
 const top3BestCombinedCost =
   rankedVendorQuotes.length > 0
@@ -522,17 +518,13 @@ console.log(
   "ALL CHILD QUOTES:",
   allVendorQuotes.length
 );
-
 console.log(
-  "TOP 3 CHILD QUOTES:",
+  "ALL CHILD QUOTES:",
   vendorQuotes.length
 );
-
 console.log(
-  "TOP 3 CHILD QUOTE RANKING:",
-  rankedVendorQuotes
-    .slice(0, 3)
-    .map(
+  "ALL CHILD QUOTE RANKING:",
+  rankedVendorQuotes.map(
       (
         item: any,
         index: number
@@ -1148,84 +1140,55 @@ specStatus:
        * SELECT ELIGIBLE VENDORS
        * ==========================================================
        */
-
-      const specificationMatched =
-        matchingVendors.filter(
-          (vendor: any) =>
-            vendor.specificationMatch ===
-            true
-        );
-
-      const fullyMatching =
-        specificationMatched.filter(
-          (vendor: any) =>
-            vendor.quantityMatch ===
-            true
-        );
-
-      /*
-       * Priority:
-       *
-       * 1. Exact specification + quantity
-       * 2. Exact specification
-       * 3. Same product / different specification
-       */
-
-      const eligibleVendors =
-        fullyMatching.length > 0
-          ? [...fullyMatching]
-          : specificationMatched.length > 0
-            ? [...specificationMatched]
-            : [...matchingVendors];
-
-      /*
-       * Cheapest eligible vendor is used for the factual
-       * cheapest-price field.
-       */
-
-    const priceComparableVendors =
-  eligibleVendors.filter(
+const fullyCompliantVendors =
+  matchingVendors.filter(
     (vendor: any) =>
+      vendor.specificationMatch === true &&
+      vendor.quantityMatch === true &&
+      vendor.vendorPrice !== null &&
+      vendor.vendorPrice <= targetPrice
+  );
+
+const priceComparableVendors =
+  matchingVendors.filter(
+    (vendor: any) =>
+      vendor.specificationMatch === true &&
+      vendor.quantityMatch === true &&
       vendor.vendorPrice !== null
   );
 
-const priceCandidates =
-  priceComparableVendors.length > 0
-    ? priceComparableVendors
-    : eligibleVendors;
+const recommendationCandidates =
+  fullyCompliantVendors.length > 0
+    ? [...fullyCompliantVendors]
+    : [...priceComparableVendors];
 
-priceCandidates.sort(
+recommendationCandidates.sort(
   (
     a: any,
     b: any
   ) =>
-    numberValue(
-      a.vendorPrice
-    ) -
-    numberValue(
-      b.vendorPrice
-    )
+    numberValue(a.vendorPrice) -
+    numberValue(b.vendorPrice)
 );
 
 const cheapest =
-  priceCandidates[0];
+  recommendationCandidates[0] ??
+  matchingVendors[0];
 
       /*
        * ==========================================================
        * PRICE TIE
        * ==========================================================
        */
-
-     const priceTie =
-  priceCandidates.length > 1 &&
+const priceTie =
+  recommendationCandidates.length > 1 &&
   cheapest.vendorPrice !== null &&
-  priceCandidates.every(
+  recommendationCandidates.every(
     (vendor: any) =>
       vendor.vendorPrice !== null &&
       vendor.vendorPrice ===
         cheapest.vendorPrice
   );
-
       /*
        * ==========================================================
        * SAVINGS
@@ -1252,35 +1215,50 @@ let productRecommendation =
   "Not Recommended";
 
 if (
-  !cheapest.specificationMatch
+  fullyCompliantVendors.length > 0
+) {
+  productRecommendation =
+    "Recommended";
+} else if (
+  matchingVendors.every(
+    (vendor: any) =>
+      vendor.specificationMatch === false
+  )
 ) {
   productRecommendation =
     "Specification Mismatch";
 } else if (
-  cheapest.quantity === null
+  matchingVendors.some(
+    (vendor: any) =>
+      vendor.specificationMatch === true &&
+      vendor.quantity === null
+  )
 ) {
   productRecommendation =
     "Quantity Missing";
 } else if (
-  !cheapest.quantityMatch
+  matchingVendors.some(
+    (vendor: any) =>
+      vendor.specificationMatch === true &&
+      vendor.quantityMatch === false
+  )
 ) {
   productRecommendation =
     "Insufficient Quantity";
 } else if (
-  cheapest.vendorPrice === null
+  matchingVendors.some(
+    (vendor: any) =>
+      vendor.specificationMatch === true &&
+      vendor.quantityMatch === true &&
+      vendor.vendorPrice === null
+  )
 ) {
   productRecommendation =
     "Price Missing";
-} else if (
-  !cheapest.priceMatch
-) {
-  productRecommendation =
-    "Above Target";
 } else {
   productRecommendation =
-    "Recommended";
+    "Above Target";
 }
-
       /*
        * ==========================================================
        * PRODUCT RESULT
@@ -1307,22 +1285,20 @@ if (
         vendors:
           matchingVendors,
 
-        cheapestVendor:
-          cheapest.vendor,
+      cheapestVendor:
+  cheapest?.vendor ?? "",
 
-        cheapestVendorQuoteId:
-          cheapest.quoteId,
+cheapestVendorQuoteId:
+  cheapest?.quoteId ?? "",
 
-        cheapestVendorQuoteNumber:
-          cheapest.quoteNumber,
+cheapestVendorQuoteNumber:
+  cheapest?.quoteNumber ?? "",
 
-       cheapestPrice:
-  cheapest.vendorPrice !== null
-    ? money(
-        cheapest.vendorPrice
-      )
+      cheapestPrice:
+  cheapest?.vendorPrice !== null &&
+  cheapest?.vendorPrice !== undefined
+    ? money(cheapest.vendorPrice)
     : null,
-
         cheapestSavings,
 
         priceTie,
@@ -1330,10 +1306,15 @@ if (
         recommendation:
           productRecommendation,
 
-        specStatus:
-          cheapest.specificationMatch
-            ? "Specification Match"
-            : "Specification Mismatch"
+       specStatus:
+  fullyCompliantVendors.length > 0
+    ? "Specification Match"
+    : matchingVendors.some(
+        (vendor: any) =>
+          vendor.specificationMatch === true
+      )
+      ? "Specification Match"
+      : "Specification Mismatch"
       });
     }
   );
@@ -1536,7 +1517,56 @@ if (
    */
 
 const bestCombinedVendorCost =
-  top3BestCombinedCost;
+  products.reduce(
+    (
+      total: number,
+      product: any
+    ) => {
+
+      if (
+        !Array.isArray(
+          product.vendors
+        ) ||
+        product.vendors.length === 0
+      ) {
+        return total;
+      }
+
+      const eligibleVendors =
+        product.vendors.filter(
+          (vendor: any) =>
+            vendor.specificationMatch === true &&
+            vendor.quantityMatch === true &&
+            vendor.vendorPrice !== null &&
+            vendor.vendorPrice <= product.targetPrice
+        );
+
+      if (
+        eligibleVendors.length === 0
+      ) {
+        return total;
+      }
+
+      const cheapestVendor =
+        eligibleVendors.reduce(
+          (
+            best: any,
+            current: any
+          ) =>
+            Number(current.vendorPrice) <
+            Number(best.vendorPrice)
+              ? current
+              : best
+        );
+
+      return (
+        total +
+        Number(cheapestVendor.vendorPrice) *
+        Number(product.requestedQty)
+      );
+    },
+    0
+  );
   /*
    * ============================================================
    * VENDOR COVERAGE

@@ -31,13 +31,24 @@ export default function ProcurementDashboard({
       .trim()
       .toLowerCase() === "master";
 
+
+  const masterVendors = isMasterQuote
+  ? Array.isArray(reportData?.vendorsCompared)
+    ? reportData.vendorsCompared
+    : []
+  : [];
+
   /*
    * ============================================================
    * PDF DOWNLOAD
    * ============================================================
    */
   const downloadPDF = () => {
-    const doc = new jsPDF();
+   const doc = new jsPDF({
+  orientation: isMasterQuote ? "landscape" : "portrait",
+  unit: "mm",
+  format: "a4",
+});
 
     doc.setFontSize(18);
     doc.text("Catalogix Procurement Report", 14, 20);
@@ -78,8 +89,10 @@ export default function ProcurementDashboard({
 
     doc.text(
       `Total Amount: $ ${Number(
-        reportData.totalAmount ?? 0
-      ).toFixed(2)}`,
+  reportData.bestCombinedVendorCost ??
+  reportData.totalAmount ??
+  0
+).toFixed(2)}`,
       14,
       75
     );
@@ -123,90 +136,233 @@ export default function ProcurementDashboard({
      * PDF PROCUREMENT TABLE
      * ============================================================
      */
-    autoTable(doc, {
-      startY: 145,
-      head: isMasterQuote
-        ? [
-            [
-              "Product",
-              "Master Qty",
-              "Target Price",
-              "Quote",
-              "Vendor",
-              "Quote Qty",
-              "Unit Price",
-              "Price Difference",
-              "Status",
-            ],
-          ]
-        : [
-            [
-              "Product",
-              "Qty Status",
-              "Recommendation",
-            ],
-          ],
+  autoTable(doc, {
+  startY: 145,
 
-      body: isMasterQuote
-        ? (reportData.products ?? []).flatMap(
-            (item: any) => {
-              const vendors = Array.isArray(item?.vendors)
-                ? item.vendors
-                : [];
-
-              return vendors.map((vendor: any) => [
-                item.productName ?? "N/A",
-                item.requestedQty ??
-                  item.quantity ??
-                  "N/A",
-                item.targetPrice !== null &&
-                item.targetPrice !== undefined
-                  ? `$${Number(
-                      item.targetPrice
-                    ).toFixed(2)}`
-                  : "N/A",
-                vendor.quoteNumber ??
-                  vendor.quoteId ??
-                  "N/A",
-                vendor.vendorName ??
-                  vendor.vendor ??
-                  "N/A",
-                vendor.quantity !== null &&
-                vendor.quantity !== undefined
-                  ? vendor.quantity
-                  : "Quantity Missing",
-                vendor.vendorPrice !== null &&
-                vendor.vendorPrice !== undefined
-                  ? `$${Number(
-                      vendor.vendorPrice
-                    ).toFixed(2)}`
-                  : "N/A",
-                vendor.priceDifference !== null &&
-                vendor.priceDifference !== undefined
-                  ? `${
-                      Number(
-                        vendor.priceDifference
-                      ) > 0
-                        ? "+"
-                        : ""
-                    }$${Number(
-                      vendor.priceDifference
-                    ).toFixed(2)}`
-                  : "N/A",
-                vendor.recommendation ??
-                  "Not Available",
-              ]);
-            }
-          )
-        : (reportData.products ?? []).map(
-            (item: any) => [
-              item.productName ?? "N/A",
-              item.remarks ?? "N/A",
-              item.recommendation ??
-                "Not Available",
-            ]
+  head: isMasterQuote
+    ? [
+        [
+          "Product",
+          "Master Specification",
+          "Master Qty",
+          "Target Price",
+          ...masterVendors.map(
+            (vendor: any, index: number) =>
+              vendor?.vendor ??
+              vendor?.vendorName ??
+              `Vendor ${index + 1}`
           ),
-    });
+          "Recommendation",
+        ],
+      ]
+    : [
+        [
+          "Product",
+          "Qty Status",
+          "Recommendation",
+        ],
+      ],
+
+  body: isMasterQuote
+    ? (reportData.products ?? []).map((item: any) => {
+        const vendors = Array.isArray(item?.vendors)
+          ? item.vendors
+          : [];
+
+        const getVendorForColumn = (columnVendor: any) => {
+          const columnQuoteId =
+            columnVendor?.quoteId ?? "";
+
+          const columnVendorName =
+            columnVendor?.vendor ??
+            columnVendor?.vendorName ??
+            "";
+
+          return vendors.find((vendor: any) => {
+            const vendorQuoteId =
+              vendor?.quoteId ?? "";
+
+            const vendorName =
+              vendor?.vendor ??
+              vendor?.vendorName ??
+              "";
+
+            // Prefer Quote ID because it uniquely
+            // identifies the transactional quote.
+            if (
+              columnQuoteId &&
+              vendorQuoteId
+            ) {
+              return (
+                columnQuoteId ===
+                vendorQuoteId
+              );
+            }
+
+            return (
+              String(vendorName)
+                .trim()
+                .toLowerCase() ===
+              String(columnVendorName)
+                .trim()
+                .toLowerCase()
+            );
+          });
+        };
+
+        const vendorCells = masterVendors.map(
+          (columnVendor: any) => {
+            const vendor =
+              getVendorForColumn(columnVendor);
+
+            if (!vendor) {
+              return "Not Quoted";
+            }
+
+            const quantity =
+              vendor?.quantity ??
+              vendor?.addressedQty ??
+              null;
+
+            const price =
+              vendor?.vendorPrice ??
+              vendor?.unitPrice ??
+              vendor?.UnitPrice ??
+              null;
+
+            const priceDifference =
+              vendor?.priceDifference;
+
+            const specificationMatch =
+              vendor?.specificationMatch;
+
+            const quantityMatch =
+              vendor?.quantityMatch;
+
+            const recommendation =
+              vendor?.recommendation ??
+              "Not Available";
+
+            const quote =
+              vendor?.quoteNumber ??
+              vendor?.quoteId ??
+              "N/A";
+
+            const qtyText =
+              quantity !== null &&
+              quantity !== undefined &&
+              quantity !== ""
+                ? `Qty: ${quantity}`
+                : "Qty: Missing";
+
+            const priceText =
+              price !== null &&
+              price !== undefined &&
+              price !== ""
+                ? `Price: $${Number(price).toFixed(2)}`
+                : "Price: Missing";
+
+            const differenceText =
+              priceDifference !== null &&
+              priceDifference !== undefined
+                ? `Difference: ${
+                    Number(priceDifference) > 0
+                      ? "+"
+                      : ""
+                  }$${Number(
+                    priceDifference
+                  ).toFixed(2)}`
+                : "Difference: N/A";
+
+            const specText =
+              specificationMatch === true
+                ? "Spec: Match"
+                : "Spec: Mismatch";
+
+            const quantityText =
+              quantityMatch === true
+                ? "Quantity: Match"
+                : quantity !== null &&
+                  quantity !== undefined &&
+                  quantity !== ""
+                ? "Quantity: Insufficient"
+                : "Quantity: Missing";
+
+            return [
+              `Quote: ${quote}`,
+              qtyText,
+              priceText,
+              differenceText,
+              specText,
+              quantityText,
+              `Recommendation: ${recommendation}`,
+            ].join("\n");
+          }
+        );
+
+        return [
+          item?.productName ?? "N/A",
+
+          item?.specification ??
+            item?.specValue ??
+            "NA",
+
+          item?.requestedQty ??
+            item?.quantity ??
+            "N/A",
+
+          item?.targetPrice !== null &&
+          item?.targetPrice !== undefined
+            ? `$${Number(
+                item.targetPrice
+              ).toFixed(2)}`
+            : "N/A",
+
+          ...vendorCells,
+
+          item?.recommendation ??
+            "Not Available",
+        ];
+      })
+    : (reportData.products ?? []).map(
+        (item: any) => [
+          item.productName ?? "N/A",
+          item.remarks ?? "N/A",
+          item.recommendation ??
+            "Not Available",
+        ]
+      ),
+
+  styles: {
+    fontSize: 7,
+    cellPadding: 3,
+    valign: "top",
+  },
+
+  headStyles: {
+    fontSize: 7,
+    valign: "middle",
+  },
+
+  columnStyles: isMasterQuote
+    ? {
+        0: { cellWidth: 28 },
+        1: { cellWidth: 32 },
+        2: { cellWidth: 16 },
+        3: { cellWidth: 20 },
+        [4 + masterVendors.length]: {
+          cellWidth: 24,
+        },
+      }
+    : {},
+
+  margin: {
+    left: 8,
+    right: 8,
+  },
+
+  theme: "grid",
+});
 
     doc.save(
       `Procurement_Report_${
@@ -251,7 +407,7 @@ export default function ProcurementDashboard({
 
           {isMasterQuote && (
             <p className="text-sm text-slate-400 mt-1">
-              Master Quote — Top 3 Transactional Quotes
+             Master Quote — Vendor Comparison
             </p>
           )}
         </div>
@@ -282,9 +438,11 @@ export default function ProcurementDashboard({
 
           <p className="text-3xl font-bold">
             $
-            {Number(
-              reportData.totalAmount ?? 0
-            ).toFixed(2)}
+           {Number(
+  reportData.bestCombinedVendorCost ??
+  reportData.totalAmount ??
+  0
+).toFixed(2)}
           </p>
         </div>
 
@@ -365,419 +523,354 @@ export default function ProcurementDashboard({
       <div className="bg-slate-900 p-6 rounded-xl overflow-x-auto">
         <h3 className="text-xl font-bold mb-4">
           {isMasterQuote
-            ? "Master Quote — Top 3 Transactional Quote Comparison"
+            ? "Master Quote — Vendor Comparison"
             : "Procurement Analysis"}
         </h3>
 
-        {isMasterQuote ? (
+      {isMasterQuote ? (
+  /*
+   * ======================================================
+   * MASTER QUOTE DISPLAY
+   * ======================================================
+   *
+   * One row = one Master Quote product.
+   * One dynamic column = one transactional vendor.
+   *
+   * Master Quote is the source of truth.
+   */
+  <table className="w-full border-collapse min-w-[1400px]">
+    <thead>
+      <tr className="border-b border-slate-700">
+        <th className="p-2 text-left">
+          Product
+        </th>
+
+        <th className="p-2 text-left">
+          Master Specification
+        </th>
+
+        <th className="p-2 text-left">
+          Requested Qty
+        </th>
+
+        <th className="p-2 text-left">
+          Target Price
+        </th>
+
+        {masterVendors.map(
+          (vendor: any, vendorIndex: number) => (
+            <th
+              key={`vendor-header-${vendorIndex}`}
+              className="p-2 text-left min-w-[220px]"
+            >
+              {vendor?.vendor ??
+                vendor?.vendorName ??
+                `Vendor ${vendorIndex + 1}`}
+            </th>
+          )
+        )}
+
+        <th className="p-2 text-left">
+          Recommendation
+        </th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {(reportData.products ?? []).map(
+        (
+          item: any,
+          productIndex: number
+        ) => {
+          const vendors = Array.isArray(
+            item?.vendors
+          )
+            ? item.vendors
+            : [];
+
           /*
-           * ======================================================
-           * MASTER QUOTE DISPLAY
-           * ======================================================
-           *
-           * IMPORTANT:
-           *
-           * masterQuoteReport.ts already gives us:
-           *
-           * product.vendors[]
-           *
-           * Each vendor entry represents an individual
-           * transactional child quote.
-           *
-           * Therefore we display those entries directly.
+           * Find the vendor data for a particular
+           * vendor column.
            */
-          <table className="w-full border-collapse min-w-[1200px]">
-            <thead>
-              <tr className="border-b border-slate-700">
-                <th className="p-2 text-left">
-                  Product
-                </th>
+          const getVendorForColumn = (
+            columnVendor: any
+          ) => {
+            const columnQuoteId =
+              columnVendor?.quoteId ??
+              "";
 
-                <th className="p-2 text-left">
-                  Master Specification
-                </th>
+            const columnVendorName =
+              columnVendor?.vendor ??
+              columnVendor?.vendorName ??
+              "";
 
-                <th className="p-2 text-left">
-                  Requested Qty
-                </th>
+            return vendors.find(
+              (vendor: any) => {
+                const vendorQuoteId =
+                  vendor?.quoteId ??
+                  "";
 
-                <th className="p-2 text-left">
-                  Target Price
-                </th>
+                const vendorName =
+                  vendor?.vendor ??
+                  vendor?.vendorName ??
+                  "";
 
-                <th className="p-2 text-left">
-                  Transactional Quote
-                </th>
+                /*
+                 * Prefer Quote ID because it uniquely
+                 * identifies the transactional quote.
+                 */
+                if (
+                  columnQuoteId &&
+                  vendorQuoteId
+                ) {
+                  return (
+                    columnQuoteId ===
+                    vendorQuoteId
+                  );
+                }
 
-                <th className="p-2 text-left">
-                  Vendor
-                </th>
+                return (
+                  String(vendorName)
+                    .trim()
+                    .toLowerCase() ===
+                  String(columnVendorName)
+                    .trim()
+                    .toLowerCase()
+                );
+              }
+            );
+          };
 
-                <th className="p-2 text-left">
-                  Quote Qty
-                </th>
+          return (
+            <tr
+              key={`product-${productIndex}`}
+              className="border-b border-slate-800 hover:bg-slate-800/50"
+            >
+              {/* MASTER PRODUCT */}
+              <td className="p-2 font-medium">
+                {item?.productName ??
+                  "N/A"}
+              </td>
 
-                <th className="p-2 text-left">
-                  Unit Price
-                </th>
+              {/* MASTER SPECIFICATION */}
+              <td className="p-2 text-sm text-slate-300">
+                {item?.specification ??
+                  item?.specValue ??
+                  "NA"}
+              </td>
 
-                <th className="p-2 text-left">
-                  Price Difference
-                </th>
+              {/* MASTER REQUESTED QUANTITY */}
+              <td className="p-2">
+                {item?.requestedQty ??
+                  item?.quantity ??
+                  "N/A"}
+              </td>
 
-                <th className="p-2 text-left">
-                  Specification
-                </th>
+              {/* MASTER TARGET PRICE */}
+              <td className="p-2">
+                {item?.targetPrice !==
+                  null &&
+                item?.targetPrice !==
+                  undefined
+                  ? `$${Number(
+                      item.targetPrice
+                    ).toFixed(2)}`
+                  : "N/A"}
+              </td>
 
-                <th className="p-2 text-left">
-                  Recommendation
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {(reportData.products ?? []).map(
+              {/* ==================================================
+                  DYNAMIC VENDOR COLUMNS
+                 ================================================== */}
+              {masterVendors.map(
                 (
-                  item: any,
-                  index: number
+                  columnVendor: any,
+                  vendorIndex: number
                 ) => {
-                  /*
-                   * Child transactional quotes selected by
-                   * masterQuoteReport.ts.
-                   */
-                  const vendors = Array.isArray(
-                    item?.vendors
-                  )
-                    ? item.vendors
-                    : [];
+                  const vendor =
+                    getVendorForColumn(
+                      columnVendor
+                    );
 
                   /*
-                   * If there are no vendor entries for this
-                   * product, show that explicitly.
+                   * Vendor did not quote this
+                   * Master product.
                    */
-                  if (vendors.length === 0) {
+                  if (!vendor) {
                     return (
-                      <tr
-                        key={`missing-${index}`}
-                        className="border-b border-slate-800"
+                      <td
+                        key={`vendor-cell-${productIndex}-${vendorIndex}`}
+                        className="p-2"
                       >
-                        <td className="p-2 font-medium">
-                          {item.productName ??
-                            "N/A"}
-                        </td>
-
-                        <td className="p-2 text-sm text-slate-300">
-                          {item.specification ??
-                            item.specValue ??
-                            "NA"}
-                        </td>
-
-                        <td className="p-2">
-                          {item.requestedQty ??
-                            item.quantity ??
-                            "N/A"}
-                        </td>
-
-                        <td className="p-2">
-                          {item.targetPrice !==
-                            null &&
-                          item.targetPrice !==
-                            undefined
-                            ? `$${Number(
-                                item.targetPrice
-                              ).toFixed(2)}`
-                            : "N/A"}
-                        </td>
-
-                        <td
-                          className="p-2"
-                          colSpan={6}
-                        >
-                          <span className="text-red-400">
-                            No transactional quote
-                            provided
-                          </span>
-                        </td>
-                      </tr>
+                        <span className="text-red-400">
+                          Not Quoted
+                        </span>
+                      </td>
                     );
                   }
 
-                  /*
-                   * One row per transactional quote.
-                   */
-                  return vendors.map(
-                    (
-                      vendor: any,
-                      vendorIndex: number
-                    ) => {
-                      const vendorName =
-                        vendor?.vendorName ??
-                        vendor?.vendor ??
-                        "N/A";
+                  const vendorQuantity =
+                    vendor?.quantity ??
+                    vendor?.addressedQty ??
+                    null;
 
-                      const quoteNumber =
-                        vendor?.quoteNumber ??
-                        vendor?.QuoteNumber ??
-                        "N/A";
+                  const vendorPrice =
+                    vendor?.vendorPrice ??
+                    vendor?.unitPrice ??
+                    vendor?.UnitPrice ??
+                    null;
 
-                      const quoteId =
-                        vendor?.quoteId ??
-                        vendor?.QuoteId ??
-                        "";
+                  const hasQuantity =
+                    vendorQuantity !==
+                      null &&
+                    vendorQuantity !==
+                      undefined &&
+                    vendorQuantity !== "";
 
-                      const quoteDisplay =
-                        quoteNumber !== "N/A"
-                          ? quoteNumber
-                          : quoteId || "N/A";
+                  const hasPrice =
+                    vendorPrice !==
+                      null &&
+                    vendorPrice !==
+                      undefined &&
+                    vendorPrice !== "";
 
-                      /*
-                       * Quantity:
-                       *
-                       * If quantity is missing, explicitly
-                       * display "Quantity Missing".
-                       */
-                      const vendorQuantity =
-                        vendor?.quantity ??
-                        vendor?.addressedQty ??
-                        null;
+                  const specificationMatch =
+                    vendor?.specificationMatch;
 
-                      const hasQuantity =
-                        vendorQuantity !==
-                          null &&
-                        vendorQuantity !==
-                          undefined &&
-                        vendorQuantity !== "";
+                  const quantityMatch =
+                    vendor?.quantityMatch;
 
-                      /*
-                       * Unit price.
-                       *
-                       * Do not invent a price when quantity
-                       * is missing.
-                       */
-                      const vendorPrice =
-                        vendor?.vendorPrice ??
-                        vendor?.unitPrice ??
-                        vendor?.UnitPrice ??
-                        null;
+                  const priceDifference =
+                    vendor?.priceDifference;
 
-                      const hasPrice =
-                        vendorPrice !==
-                          null &&
-                        vendorPrice !==
-                          undefined &&
-                        vendorPrice !== "";
+                  const recommendation =
+                    vendor?.recommendation ??
+                    "Not Available";
 
-                      /*
-                       * Price difference comes from the
-                       * deterministic backend.
-                       */
-                      const rawPriceDifference =
-                        vendor?.priceDifference ??
-                        vendor?.priceDiff ??
-                        null;
+                  return (
+                    <td
+                      key={`vendor-cell-${productIndex}-${vendorIndex}`}
+                      className="p-2 align-top"
+                    >
+                      <div className="space-y-1">
+                        {/* QUOTE NUMBER */}
+                        <div className="text-blue-300 font-medium">
+                          Quote:{" "}
+                          {vendor?.quoteNumber ??
+                            vendor?.quoteId ??
+                            "N/A"}
+                        </div>
 
-                      const hasPriceDifference =
-                        rawPriceDifference !==
-                          null &&
-                        rawPriceDifference !==
-                          undefined &&
-                        rawPriceDifference !== "";
+                        {/* QUANTITY */}
+                        <div>
+                          Qty:{" "}
+                          {hasQuantity
+                            ? vendorQuantity
+                            : "Missing"}
+                        </div>
 
-                      /*
-                       * Specification status.
-                       */
-                      const specificationMatch =
-                        vendor?.specificationMatch;
-
-                      const specificationStatus =
-                        specificationMatch ===
-                        true
-                          ? "Match"
-                          : specificationMatch ===
-                            false
-                          ? "Specification Mismatch"
-                          : vendor?.recommendation ===
-                            "Specification Mismatch"
-                          ? "Specification Mismatch"
-                          : "N/A";
-
-                      /*
-                       * Recommendation comes directly from
-                       * masterQuoteReport.ts.
-                       */
-                      let recommendation =
-                        vendor?.recommendation ??
-                        "Not Available";
-
-                      /*
-                       * Quantity Missing must be visible
-                       * regardless of recommendation.
-                       */
-                      if (!hasQuantity) {
-                        recommendation =
-                          "Quantity Missing";
-                      }
-
-                      return (
-                        <tr
-                          key={`${index}-${vendorIndex}`}
-                          className="border-b border-slate-800 hover:bg-slate-800/50"
-                        >
-                          {/* PRODUCT FROM MASTER */}
-                          <td className="p-2 font-medium">
-                            {item.productName ??
-                              "N/A"}
-                          </td>
-
-                          {/* MASTER SPECIFICATION */}
-                          <td className="p-2 text-sm text-slate-300">
-                            {item.specification ??
-                              item.specValue ??
-                              "NA"}
-                          </td>
-
-                          {/* MASTER REQUESTED QTY */}
-                          <td className="p-2">
-                            {item.requestedQty ??
-                              item.quantity ??
-                              "N/A"}
-                          </td>
-
-                          {/* MASTER TARGET PRICE */}
-                          <td className="p-2">
-                            {item.targetPrice !==
-                              null &&
-                            item.targetPrice !==
-                              undefined
-                              ? `$${Number(
-                                  item.targetPrice
-                                ).toFixed(2)}`
-                              : "N/A"}
-                          </td>
-
-                          {/* TRANSACTIONAL QUOTE */}
-                          <td className="p-2 font-medium text-blue-300">
-                            {quoteDisplay}
-                          </td>
-
-                          {/* VENDOR */}
-                          <td className="p-2">
-                            {vendorName}
-                          </td>
-
-                          {/* QUOTE QUANTITY */}
-                          <td className="p-2">
-                            {hasQuantity ? (
-                              vendorQuantity
-                            ) : (
-                              <span className="text-yellow-400">
-                                Quantity Missing
-                              </span>
-                            )}
-                          </td>
-
-                          {/* UNIT PRICE */}
-                          <td className="p-2">
-                            {hasQuantity &&
-                            hasPrice ? (
-                              `$${Number(
+                        {/* PRICE */}
+                        <div>
+                          Price:{" "}
+                          {hasPrice
+                            ? `$${Number(
                                 vendorPrice
                               ).toFixed(2)}`
-                            ) : !hasQuantity ? (
-                              <span className="text-yellow-400">
-                                Cannot Compare
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">
-                                Price Missing
-                              </span>
-                            )}
-                          </td>
+                            : "Missing"}
+                        </div>
 
-                          {/* PRICE DIFFERENCE */}
-                          <td className="p-2">
-                            {hasQuantity &&
-                            hasPriceDifference ? (
-                              <span
-                                className={
-                                  Number(
-                                    rawPriceDifference
-                                  ) <= 0
-                                    ? "text-green-400"
-                                    : "text-red-400"
-                                }
-                              >
-                                {Number(
-                                  rawPriceDifference
+                        {/* PRICE DIFFERENCE */}
+                        <div>
+                          Difference:{" "}
+                          {priceDifference !==
+                            null &&
+                          priceDifference !==
+                            undefined
+                            ? `${
+                                Number(
+                                  priceDifference
                                 ) > 0
                                   ? "+"
-                                  : ""}
-                                $
-                                {Number(
-                                  rawPriceDifference
-                                ).toFixed(2)}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">
-                                N/A
-                              </span>
-                            )}
-                          </td>
+                                  : ""
+                              }$${Number(
+                                priceDifference
+                              ).toFixed(2)}`
+                            : "N/A"}
+                        </div>
 
-                          {/* SPECIFICATION */}
-                          <td className="p-2">
-                            {specificationStatus ===
-                            "Match" ? (
-                              <span className="text-green-400">
-                                Match
-                              </span>
-                            ) : specificationStatus ===
-                              "Specification Mismatch" ? (
-                              <span className="text-red-400">
-                                Specification
-                                Mismatch
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">
-                                N/A
-                              </span>
-                            )}
-                          </td>
+                        {/* SPECIFICATION */}
+                        <div>
+                          Spec:{" "}
+                          {specificationMatch ===
+                          true ? (
+                            <span className="text-green-400">
+                              Match
+                            </span>
+                          ) : (
+                            <span className="text-red-400">
+                              Mismatch
+                            </span>
+                          )}
+                        </div>
 
-                          {/* RECOMMENDATION */}
-                          <td className="p-2">
-                            <span
-                              className={`px-3 py-1 rounded text-white ${
-                                recommendation ===
-                                "Recommended"
-                                  ? "bg-green-600"
-                                  : recommendation ===
-                                    "Above Target"
-                                  ? "bg-yellow-600"
-                                  : recommendation ===
-                                    "Quantity Missing"
-                                  ? "bg-yellow-600"
-                                  : recommendation ===
-                                    "Insufficient Quantity"
-                                  ? "bg-orange-600"
-                                  : recommendation ===
-                                    "Specification Mismatch"
-                                  ? "bg-red-600"
-                                  : "bg-red-600"
-                              }`}
-                            >
+                        {/* QUANTITY STATUS */}
+                        <div>
+                          Quantity:{" "}
+                          {quantityMatch ===
+                          true ? (
+                            <span className="text-green-400">
+                              Match
+                            </span>
+                          ) : hasQuantity ? (
+                            <span className="text-red-400">
+                              Insufficient
+                            </span>
+                          ) : (
+                            <span className="text-yellow-400">
+                              Missing
+                            </span>
+                          )}
+                        </div>
+
+                        {/* RECOMMENDATION */}
+                        <div className="font-semibold">
+                          {recommendation ===
+                          "Recommended" ? (
+                            <span className="text-green-400">
+                              Recommended
+                            </span>
+                          ) : (
+                            <span className="text-yellow-400">
                               {recommendation}
                             </span>
-                          </td>
-                        </tr>
-                      );
-                    }
+                          )}
+                        </div>
+                      </div>
+                    </td>
                   );
                 }
               )}
-            </tbody>
-          </table>
-        ) : (
+
+              {/* PRODUCT-LEVEL RECOMMENDATION */}
+              <td className="p-2 font-semibold">
+                {item?.recommendation ===
+                "Recommended" ? (
+                  <span className="text-green-400">
+                    Recommended
+                  </span>
+                ) : (
+                  <span className="text-yellow-400">
+                    {item?.recommendation ??
+                      "Not Available"}
+                  </span>
+                )}
+              </td>
+            </tr>
+          );
+        }
+      )}
+    </tbody>
+  </table>
+) : (
           /*
            * ======================================================
            * TRANSACTIONAL QUOTE DISPLAY
