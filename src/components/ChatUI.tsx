@@ -22,12 +22,15 @@ I'm your **AI Procurement Assistant**.
 
 I can help you with:
 
-- Search Products
-- Compare Vendors
-- Generate Procurement Reports
-- View Product Specifications
-- Analyze Quotes
-- Retrieve information from the Catalogix database
+- Generate Master Quote comparison reports
+
+- Compare vendor quotations against Master Quote products
+
+- Evaluate vendor prices, quantities, and product specifications
+
+- Identify missing products and quotation mismatches
+
+- Provide vendor recommendations based on price and specification matching
 
 **How can I help you today?**
 `,

@@ -279,14 +279,29 @@ export default function ProcurementDashboard({
                 ? "Spec: Match"
                 : "Spec: Mismatch";
 
-            const quantityText =
-              quantityMatch === true
-                ? "Quantity: Match"
-                : quantity !== null &&
-                  quantity !== undefined &&
-                  quantity !== ""
-                ? "Quantity: Insufficient"
-                : "Quantity: Missing";
+
+const requestedQuantity =
+  item?.requestedQty ?? item?.quantity;
+
+const quantityText =
+  quantity === null ||
+  quantity === undefined ||
+  quantity === ""
+    ? "Quantity: Missing"
+    : requestedQuantity === null ||
+        requestedQuantity === undefined ||
+        requestedQuantity === ""
+      ? "Quantity: Requested quantity missing"
+      : !Number.isFinite(Number(quantity)) ||
+          !Number.isFinite(Number(requestedQuantity))
+        ? "Quantity: Unavailable"
+        : Number(quantity) === Number(requestedQuantity)
+          ? "Quantity: Match"
+          : Number(quantity) > Number(requestedQuantity)
+            ? "Quantity: More Than Required"
+            : "Quantity: Insufficient";
+
+
 
             return [
               `Quote: ${quote}`,
@@ -812,24 +827,70 @@ export default function ProcurementDashboard({
                           )}
                         </div>
 
-                        {/* QUANTITY STATUS */}
-                        <div>
-                          Quantity:{" "}
-                          {quantityMatch ===
-                          true ? (
-                            <span className="text-green-400">
-                              Match
-                            </span>
-                          ) : hasQuantity ? (
-                            <span className="text-red-400">
-                              Insufficient
-                            </span>
-                          ) : (
-                            <span className="text-yellow-400">
-                              Missing
-                            </span>
-                          )}
-                        </div>
+                       
+
+{/* QUANTITY STATUS */}
+<div>
+  Quantity:{" "}
+  {!hasQuantity ? (
+    <span className="text-yellow-400">
+      Missing
+    </span>
+  ) : (() => {
+      const requestedQuantity =
+        item?.requestedQty ?? item?.quantity;
+
+      if (
+        requestedQuantity === null ||
+        requestedQuantity === undefined ||
+        requestedQuantity === ""
+      ) {
+        return (
+          <span className="text-yellow-400">
+            Requested quantity missing
+          </span>
+        );
+      }
+
+      const vendorQty = Number(vendorQuantity);
+      const requestedQty = Number(requestedQuantity);
+
+      if (
+        !Number.isFinite(vendorQty) ||
+        !Number.isFinite(requestedQty)
+      ) {
+        return (
+          <span className="text-yellow-400">
+            Quantity unavailable
+          </span>
+        );
+      }
+
+      if (vendorQty === requestedQty) {
+        return (
+          <span className="text-green-400">
+            Match
+          </span>
+        );
+      }
+
+      if (vendorQty > requestedQty) {
+        return (
+          <span className="text-green-400">
+            More Than Required
+          </span>
+        );
+      }
+
+      return (
+        <span className="text-red-400">
+          Insufficient
+        </span>
+      );
+    })()}
+</div>
+
+
 
                         {/* RECOMMENDATION */}
                         <div className="font-semibold">
@@ -844,6 +905,31 @@ export default function ProcurementDashboard({
                             </span>
                           )}
                         </div>
+{/* FAVORABLE SCORE */}
+<div className="mt-3 border-t border-slate-700 pt-2">
+  <p className="font-semibold text-purple-300">
+    Favorable Score
+  </p>
+
+  <p className="text-lg font-bold">
+    {vendor?.favorableScore !== null &&
+    vendor?.favorableScore !== undefined
+      ? `${Number(vendor.favorableScore).toFixed(2)} / ${Number(
+          vendor.favorableScoreAvailableWeightage ?? 0
+        ).toFixed(2)}`
+      : "Not Available"}
+  </p>
+
+  {Array.isArray(vendor?.favorableScoreBreakdown) &&
+    vendor.favorableScoreBreakdown.map(
+      (criterion: any, scoreIndex: number) => (
+        <div key={scoreIndex} className="text-xs text-slate-400">
+          {criterion.parameter}: {criterion.score}
+          (Weighted: {criterion.weightedScore})
+        </div>
+      )
+    )}
+</div>
                       </div>
                     </td>
                   );

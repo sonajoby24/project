@@ -1,0 +1,21 @@
+{
+  "maxScore": 10,
+  "weightages": {
+    "quantity": 20,
+    "price": 25,
+    "paymentTerms": 20,
+    "mlDrivenValues": 20,
+    "specification": 15
+  },
+  "quantity": {
+    "insufficientQuantityIsNegative": true,
+    "allowFavorableExtraQuantity": true,
+    "maximumPositiveScore": 10,
+    "maximumNegativeScore": -10
+  },
+  "price": {
+    "maximumPositiveScore": 10,
+    "maximumNegativeScore": -10,
+    "percentagePerScorePoint": 10
+  }
+}

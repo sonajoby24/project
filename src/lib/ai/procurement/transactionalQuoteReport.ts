@@ -225,14 +225,38 @@ export function generateTransactionalQuoteReport(
     const requestedQty =
       numberValue(master?.Quantity);
 
-    const addressedQty =
-      vendorLine
-        ? numberValue(vendorLine?.Quantity)
-        : null;
+   const addressedQty =
+  vendorLine
+    ? nullableNumber(vendorLine?.Quantity)
+    : null;
 
-    const quantityMatch =
-      vendorLine !== null &&
-      requestedQty === addressedQty;
+const quantityMatch =
+  vendorLine !== null &&
+  addressedQty !== null &&
+  addressedQty >= requestedQty;
+
+const quantityExactMatch =
+  vendorLine !== null &&
+  addressedQty !== null &&
+  addressedQty === requestedQty;
+
+const quantityDeviationPercent =
+  addressedQty !== null && requestedQty > 0
+    ? Number(
+        (
+          ((addressedQty - requestedQty) / requestedQty) * 100
+        ).toFixed(2)
+      )
+    : null;
+
+const quantityStatus =
+  !vendorLine || addressedQty === null
+    ? "Quantity Not Provided"
+    : addressedQty < requestedQty
+      ? "Quantity Shortfall"
+      : addressedQty === requestedQty
+        ? "Exact Quantity Match"
+        : "Favorable Quantity";
 
     const targetPrice =
       nullableNumber(master?.TargetPrice);
@@ -295,9 +319,9 @@ export function generateTransactionalQuoteReport(
       remarks = "Not Quoted";
     } else if (!specificationMatch) {
       remarks = "Specification Mismatch";
-    } else if (!quantityMatch) {
-      remarks = "Quantity Mismatch";
-    } else if (!priceMatch) {
+   } else if (!quantityMatch) {
+  remarks = "Insufficient Quantity";
+}else if (!priceMatch) {
       remarks = "Price Above Target";
     } else {
       remarks =
@@ -329,11 +353,13 @@ export function generateTransactionalQuoteReport(
 
       vendorTotal,
 
-      quantityMatch,
+     quantityMatch,
+     quantityExactMatch,
+     quantityDeviationPercent,
+     quantityStatus,
 
-      priceMatch,
-
-      specificationMatch,
+     priceMatch,
+     specificationMatch,
 
       specificationStatus:
         !vendorLine

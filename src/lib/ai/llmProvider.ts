@@ -46,14 +46,15 @@ export function getLLMClient(): OpenAI {
 
   }
 
+  
   return new OpenAI({
-
     baseURL:
       "https://generativelanguage.googleapis.com/v1beta/openai/",
-
     apiKey,
-
+    timeout: 45_000,
+    maxRetries: 0,
   });
+
 
 }
 

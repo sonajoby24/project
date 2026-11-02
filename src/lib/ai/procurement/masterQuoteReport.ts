@@ -1,3 +1,10 @@
+import {
+  calculateQuantityScore,
+  calculatePriceScore,
+  calculateFavorableScore,
+  type ScoreParameter,
+} from "./favorableScore";
+
 function normalize(value: any = ""): string {
   return String(value ?? "")
     .replace(/Â/g, "")
@@ -920,10 +927,60 @@ const vendorPrice =
            * ------------------------------------------------------
            */
 
-         const quantityMatch =
+        
+const quantityMatch =
   vendorQty !== null &&
-  vendorQty ===
-    requestedQty;
+  vendorQty === requestedQty;
+
+const quantitySufficient =
+  vendorQty !== null &&
+  vendorQty >= requestedQty;
+
+const quantityDeviationPercent =
+  vendorQty !== null && requestedQty > 0
+    ? Number(
+        (((vendorQty - requestedQty) / requestedQty) * 100).toFixed(2)
+      )
+    : null;
+
+const quantityStatus =
+  vendorQty === null
+    ? "Quantity Not Provided"
+    : vendorQty < requestedQty
+      ? "Quantity Shortfall"
+      : vendorQty === requestedQty
+        ? "Exact Quantity Match"
+        : "Favorable Quantity";
+ 
+const quantityScore =
+  vendorQty !== null && requestedQty > 0
+    ? calculateQuantityScore(
+        requestedQty,
+        vendorQty
+      )
+    : null;
+
+const priceScore =
+  specificationMatch &&
+  vendorPrice !== null &&
+  targetPrice > 0
+    ? calculatePriceScore(
+        targetPrice,
+        vendorPrice
+      )
+    : null;
+
+const favorableCriteria: Partial<Record<ScoreParameter, number>> = {};
+
+if (quantityScore !== null) {
+  favorableCriteria.quantity = quantityScore.score;
+}
+
+if (priceScore !== null) {
+  favorableCriteria.price = priceScore.score;
+}
+
+const favorableScore = calculateFavorableScore(favorableCriteria);
 
           /*
            * ------------------------------------------------------
@@ -937,12 +994,13 @@ const vendorPrice =
            * AND vendor price is not above target
            */
 
-         const priceMatch =
+        
+const priceMatch =
   specificationMatch &&
-  quantityMatch &&
+  quantitySufficient &&
   vendorPrice !== null &&
-  vendorPrice <=
-    targetPrice;
+  vendorPrice <= targetPrice;
+
 
           /*
            * ------------------------------------------------------
@@ -992,7 +1050,7 @@ if (
   recommendation =
     "Quantity Missing";
 } else if (
-  !quantityMatch
+  !quantitySufficient
 ) {
   recommendation =
     "Insufficient Quantity";
@@ -1011,61 +1069,55 @@ if (
     "Recommended";
 }
 
+matchingVendors.push({
+  vendor,
+  quoteId,
+  quoteNumber,
 
-          matchingVendors.push({
-            vendor,
+  quoteName: vendorInfo?.QuoteName ?? "",
+  quoteType: vendorInfo?.QuoteType ?? "Transactional",
 
-            quoteId,
+  quantity: vendorQty,
+  quantityStatus,
+  quantityDeviationPercent,
 
-            quoteNumber,
+  // Quantity scoring
+  quantityScore: quantityScore?.score ?? null,
+  quantityWeightedScore: quantityScore?.weightedScore ?? null,
+  quantityScoreReason:
+    quantityScore?.reason ?? "Quantity not available",
 
-            quoteName:
-              vendorInfo?.QuoteName ??
-              "",
+  // Price scoring
+  priceScore: priceScore?.score ?? null,
+  priceWeightedScore: priceScore?.weightedScore ?? null,
+  priceScoreReason:
+    priceScore?.reason ?? "Price not available",
+    
+// Overall favorable score
+favorableScore: favorableScore.totalScore,
+favorableScoreMax: favorableScore.maxPossibleScore,
+favorableScoreMin: favorableScore.minPossibleScore,
+favorableScoreAvailableWeightage:
+  favorableScore.availableWeightage,
 
-            quoteType:
-              vendorInfo?.QuoteType ??
-              "Transactional",
+favorableScoreBreakdown: favorableScore.criteria,
 
-           quantity:
-  vendorQty,
+  vendorPrice:
+    vendorPrice !== null ? money(vendorPrice) : null,
 
-quantityStatus:
-  vendorQty === null
-    ? "Quantity Missing"
-    : quantityMatch
-      ? "Quantity Match"
-      : "Quantity Mismatch",
+  priceDifference,
+  totalVendorCost,
 
-vendorPrice:
-  vendorPrice !== null
-    ? money(
-        vendorPrice
-      )
-    : null,
+  quantityMatch,
+  quantitySufficient,
+  priceMatch,
+  specificationMatch,
 
-            priceDifference,
+  masterSpecification: cleanSpec(master?.specValue),
+  vendorSpecification: cleanSpec(vendorLine?.specValue),
 
-            totalVendorCost,
-
-            quantityMatch,
-
-            priceMatch,
-
-            specificationMatch,
-
-            masterSpecification:
-              cleanSpec(
-                master?.specValue
-              ),
-
-            vendorSpecification:
-              cleanSpec(
-                vendorLine?.specValue
-              ),
-
-            recommendation
-          });
+  recommendation
+});
         }
       );
 
@@ -1144,7 +1196,7 @@ const fullyCompliantVendors =
   matchingVendors.filter(
     (vendor: any) =>
       vendor.specificationMatch === true &&
-      vendor.quantityMatch === true &&
+     vendor.quantitySufficient === true &&
       vendor.vendorPrice !== null &&
       vendor.vendorPrice <= targetPrice
   );
@@ -1153,7 +1205,7 @@ const priceComparableVendors =
   matchingVendors.filter(
     (vendor: any) =>
       vendor.specificationMatch === true &&
-      vendor.quantityMatch === true &&
+      vendor.quantitySufficient === true &&
       vendor.vendorPrice !== null
   );
 
@@ -1240,7 +1292,7 @@ if (
   matchingVendors.some(
     (vendor: any) =>
       vendor.specificationMatch === true &&
-      vendor.quantityMatch === false
+     vendor.quantitySufficient === false
   )
 ) {
   productRecommendation =
@@ -1249,7 +1301,7 @@ if (
   matchingVendors.some(
     (vendor: any) =>
       vendor.specificationMatch === true &&
-      vendor.quantityMatch === true &&
+     vendor.quantitySufficient === true&&
       vendor.vendorPrice === null
   )
 ) {
@@ -1536,7 +1588,7 @@ const bestCombinedVendorCost =
         product.vendors.filter(
           (vendor: any) =>
             vendor.specificationMatch === true &&
-            vendor.quantityMatch === true &&
+           vendor.quantitySufficient === true&&
             vendor.vendorPrice !== null &&
             vendor.vendorPrice <= product.targetPrice
         );
@@ -1706,7 +1758,7 @@ const vendorPrice =
          if (
   vendorQty !== null &&
   masterQty !== null &&
-  vendorQty === masterQty
+ vendorQty >= masterQty
 ) {
   quantityMatched++;
 }
@@ -1714,7 +1766,7 @@ const vendorPrice =
 if (
   vendorQty !== null &&
   masterQty !== null &&
-  vendorQty === masterQty &&
+ vendorQty >= masterQty&&
   vendorPrice !== null &&
   vendorPrice <= targetPrice
 ) {
