@@ -1,3 +1,4 @@
+
 import admin from "firebase-admin";
 import dotenv from "dotenv";
 
@@ -18,5 +19,37 @@ if (!admin.apps.length) {
 }
 
 const adminDb = admin.firestore();
+const adminAuth = admin.auth();
 
-export { adminDb };
+/**
+ * Verify Firebase ID token from the request.
+ * Rejects unauthenticated users and users with unverified emails.
+ */
+async function verifyAuthToken(request: Request) {
+  const authorization = request.headers.get("authorization");
+
+  if (!authorization?.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authorization.slice(7).trim();
+
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(token);
+
+    if (decodedToken.email_verified !== true) {
+      return null;
+    }
+
+    return decodedToken;
+  } catch (error) {
+    console.error("Firebase token verification failed:", error);
+    return null;
+  }
+}
+
+export { adminDb, adminAuth, verifyAuthToken };

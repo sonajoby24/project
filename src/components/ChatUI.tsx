@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import ProcurementDashboard from "./ProcurementDashboard";
+import { auth } from "@/lib/firebase";
 
 interface Message {
   role: "user" | "assistant";
@@ -130,6 +131,20 @@ I can help you with:
     setLoading(true);
 
     try {
+      const currentUser = auth.currentUser;
+
+if (!currentUser) {
+  setMessages([
+    ...updatedMessages,
+    {
+      role: "assistant",
+      content: "Please log in before using Catalogix.",
+    },
+  ]);
+  return;
+}
+
+const idToken = await currentUser.getIdToken();
       /*
        * ==========================================================
        * REPORT REQUEST
@@ -150,26 +165,27 @@ I can help you with:
        * use the dedicated report API.
        */
 
-      if (
-        wantsReport &&
-        (quoteId || quoteNumber)
-      ) {
-        const reportResponse = await fetch(
-          "/api/report",
-          {
-            method: "POST",
+    if (
+  wantsReport &&
+  (quoteId || quoteNumber)
+) {
+  // Send authenticated report request
+  const reportResponse = await fetch(
+    "/api/report",
+    {
+      method: "POST",
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`,
+      },
 
-            body: JSON.stringify({
-              quoteId,
-              quoteNumber,
-            }),
-          }
-        );
+      body: JSON.stringify({
+        quoteId,
+        quoteNumber,
+      }),
+    }
+  );
 
         const reportData =
           await reportResponse.json();
@@ -239,10 +255,10 @@ The procurement report has been generated successfully.
         {
           method: "POST",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+        headers: {
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${idToken}`,
+},
 
           body: JSON.stringify({
             message: userInput,

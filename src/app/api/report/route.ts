@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { adminDb } from "@/lib/firebase-admin";
+import { adminDb, verifyAuthToken } from "@/lib/firebase-admin";
 
 import {
   generateMasterQuoteReport,
@@ -134,14 +134,57 @@ function normalizeQuoteForReport(data: any): any {
 /* ============================================================
    POST /api/report
    ============================================================ */
-
 export async function POST(req: Request) {
-
   try {
+    // =========================================
+    // 1. VERIFY FIREBASE AUTHENTICATION
+    // =========================================
 
-    /* ==========================================================
-       READ REQUEST
-       ========================================================== */
+    const decodedToken = await verifyAuthToken(req);
+
+    if (!decodedToken) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unauthorized. Please log in with a verified email.",
+        },
+        { status: 401 }
+      );
+    }
+
+    // =========================================
+    // 2. VERIFY ADMIN / EMPLOYEE PERMISSION
+    // =========================================
+
+    const isAdmin =
+      decodedToken.email === "sonajoby530@gmail.com";
+
+    let isAuthorizedEmployee = false;
+
+    if (!isAdmin) {
+      const userDoc = await adminDb
+        .collection("users")
+        .doc(decodedToken.uid)
+        .get();
+
+      isAuthorizedEmployee =
+        userDoc.exists &&
+        userDoc.data()?.role === "user";
+    }
+
+    if (!isAdmin && !isAuthorizedEmployee) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Forbidden. You do not have permission to generate reports.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // =========================================
+    // 3. READ REQUEST
+    // =========================================
 
     const body = await req.json();
 
