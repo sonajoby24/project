@@ -91,23 +91,26 @@ function formatQuoteLineProductAnswer(
 
   const q = clean(question).toLowerCase();
 
-  const asksSpecification =
-    q.includes("specification") ||
-    q.includes("spec value") ||
-    q.includes("specvalue");
+ const asksSpecification =
+  q.includes("specification") ||
+  q.includes("spec value") ||
+  q.includes("specvalue");
 
-  const asksUnitPrice =
-    q.includes("unit price") ||
-    q.includes("unitprice") ||
-    q.includes("price");
+const asksTargetPrice =
+  q.includes("target price") ||
+  q.includes("targetprice");
 
-  const asksQuantity =
-    q.includes("quantity") ||
-    q.includes("qty");
+const asksUnitPrice =
+  q.includes("unit price") ||
+  q.includes("unitprice") ||
+  (
+    q.includes("price") &&
+    !asksTargetPrice
+  );
 
-  const asksTargetPrice =
-    q.includes("target price") ||
-    q.includes("targetprice");
+const asksQuantity =
+  q.includes("quantity") ||
+  q.includes("qty");
 
   if (
     !asksSpecification &&
@@ -632,7 +635,17 @@ if (
             );
           }
         );
+      if (
+  requestedQuoteNumber &&
+  !selectedQuote
+) {
+  console.log(
+    "REQUESTED QUOTE NOT FOUND:",
+    requestedQuoteNumber
+  );
 
+  return `Quote ${requestedQuoteNumber} was not found in the retrieved Firebase records.`;
+}
       console.log(
         "REQUESTED QUOTE NUMBER:",
         requestedQuoteNumber
@@ -1178,11 +1191,13 @@ clearly and professionally.
     ) {
 
       return `
-
 AI service quota exceeded.
 
-The Firebase data is available
-and working correctly.
+The AI provider rejected the request
+because of token or credit limits.
+
+Please check the AI provider quota
+and try again later.
 
 The AI provider rejected the request
 because of token/credit limits.

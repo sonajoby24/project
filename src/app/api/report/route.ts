@@ -151,37 +151,7 @@ export async function POST(req: Request) {
         { status: 401 }
       );
     }
-
-    // =========================================
-    // 2. VERIFY ADMIN / EMPLOYEE PERMISSION
-    // =========================================
-
-    const isAdmin =
-      decodedToken.email === "sonajoby530@gmail.com";
-
-    let isAuthorizedEmployee = false;
-
-    if (!isAdmin) {
-      const userDoc = await adminDb
-        .collection("users")
-        .doc(decodedToken.uid)
-        .get();
-
-      isAuthorizedEmployee =
-        userDoc.exists &&
-        userDoc.data()?.role === "user";
-    }
-
-    if (!isAdmin && !isAuthorizedEmployee) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Forbidden. You do not have permission to generate reports.",
-        },
-        { status: 403 }
-      );
-    }
-
+    
     // =========================================
     // 3. READ REQUEST
     // =========================================

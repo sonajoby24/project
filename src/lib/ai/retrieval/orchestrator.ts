@@ -677,30 +677,20 @@ export async function executeRetrievalPlan(
     const line of
       combinedEvidence.quoteLines
   ) {
-    const key = [
-      line?.VendorName ||
-        line?.vendor ||
-        "",
+   
+const key = [
+  line?.quoteId || line?.QuoteId || "",
+  line?.quoteNumber || line?.QuoteNumber || "",
+  line?.lineIndex ?? "",
+  line?.VendorName || line?.vendor || "",
+  line?.ProductName || line?.product || "",
+  line?.specValue || line?.Specification || "",
+  line?.UnitPrice ?? line?.unitPrice ?? line?.Price ?? "",
+  line?.Quantity ?? line?.quantity ?? "",
+]
+  .map(normalizeField)
+  .join("|");
 
-      line?.ProductName ||
-        line?.product ||
-        "",
-
-      line?.specValue ||
-        line?.Specification ||
-        "",
-
-      line?.UnitPrice ??
-        line?.unitPrice ??
-        line?.Price ??
-        "",
-
-      line?.quoteNumber ||
-        line?.QuoteNumber ||
-        "",
-    ]
-      .map(normalizeField)
-      .join("|");
 
     uniqueQuoteLines.set(
       key,
