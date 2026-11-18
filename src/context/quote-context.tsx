@@ -59,7 +59,7 @@ const QuoteContext = createContext<QuoteContextType | undefined>(undefined);
 const generateNewQuoteId = () => {
 const timestamp = Date.now().toString(36);
 const randomPart = Math.random().toString(36).substring(2, 9);
-return 'Q-${timestamp}-${randomPart}'.toUpperCase(); // ✅ FIXED
+return `Q-${timestamp}-${randomPart}`.toUpperCase();// ✅ FIXED
 };
 
 const createInitialQuoteState = (): Quote => ({

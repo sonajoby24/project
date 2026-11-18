@@ -1,8 +1,19 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
+import { adminDb, verifyAuthToken } from "@/lib/firebase-admin";
 
 export async function POST(req: Request) {
   try {
+        const decodedToken = await verifyAuthToken(req);
+
+    if (!decodedToken) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unauthorized. Please complete SMS verification.",
+        },
+        { status: 401 }
+      );
+    }
     const { parentQuoteId } =
       await req.json();
 

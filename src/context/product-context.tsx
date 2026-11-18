@@ -1,6 +1,7 @@
 
 import { createContext, useContext, useState, ReactNode, useEffect, useCallback, useMemo } from 'react';
 import { db } from '@/lib/firebase';
+import { useAuth } from '@/context/auth-context';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, getDoc, writeBatch, getDocs, deleteField, Timestamp, updateDoc } from 'firebase/firestore';
 //import { products as initialProducts } from '@/lib/products';
 import type { Product } from '@/lib/types';
@@ -68,6 +69,8 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const { toast } = useToast();
+
+  const { user, loading: authLoading, isAppUser } = useAuth();
   
   const productsCollectionRef = collection(db, 'products');
 
@@ -91,44 +94,70 @@ export function ProductProvider({ children }: { children: ReactNode }) {
     setIsHydrated(true);
   }, []);
 
+ 
   useEffect(() => {
-    const checkAndSeed = async () => {
-  return;
-};
-    
-    checkAndSeed();
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
 
-    const unsubscribe = onSnapshot(productsCollectionRef, (snapshot) => {
-      const productsData = snapshot.docs.map(doc => {
-        const data = doc.data();
-        const productWithDates: Record<string, any> = {};
-        for (const key in data) {
-          if (data[key] instanceof Timestamp) {
-            productWithDates[key] = data[key].toDate();
-          } else {
-            productWithDates[key] = data[key];
+   if (!user || !isAppUser || !user.emailVerified) {
+      setProducts([]);
+      setRawKeys([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    const unsubscribe = onSnapshot(
+      productsCollectionRef,
+      (snapshot) => {
+        const productsData = snapshot.docs.map((document) => {
+          const data = document.data();
+          const productWithDates: Record<string, any> = {};
+
+          for (const key in data) {
+            if (data[key] instanceof Timestamp) {
+              productWithDates[key] = data[key].toDate();
+            } else {
+              productWithDates[key] = data[key];
+            }
           }
+
+          return {
+            ...productWithDates,
+            productId: document.id,
+          } as Product;
+        });
+
+        setProducts(productsData);
+
+        if (productsData.length > 0) {
+          const allKeys = new Set<string>();
+
+          productsData.forEach((product) => {
+            Object.keys(product).forEach((key) => allKeys.add(key));
+          });
+
+          allKeys.add('quoteTotal');
+          setRawKeys(Array.from(allKeys));
+        } else {
+          setRawKeys([]);
         }
-        return { ...productWithDates, productId: doc.id } as Product;
-      });
 
-      setProducts(productsData);
-
-      if (productsData.length > 0) {
-        const allKeys = new Set<string>();
-        productsData.forEach(p => Object.keys(p).forEach(k => allKeys.add(k)));
-        allKeys.add('quoteTotal');
-        const newRawKeys = Array.from(allKeys);
-        setRawKeys(newRawKeys);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching products with snapshot:', error);
+        setProducts([]);
+        setRawKeys([]);
+        setLoading(false);
       }
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching products with snapshot: ", error);
-      setLoading(false);
-    });
+    );
 
     return () => unsubscribe();
-  }, [seedDatabase]);
+ }, [authLoading, user?.uid, user?.emailVerified, isAppUser]);
 
   // Update states and localStorage when rawKeys changes, only after hydration
   useEffect(() => {

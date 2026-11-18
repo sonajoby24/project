@@ -41,15 +41,50 @@ async function verifyAuthToken(request: Request) {
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
 
-    if (decodedToken.email_verified !== true) {
-      return null;
-    }
+   if (decodedToken.email_verified !== true) {
+  return null;
+}
 
-    return decodedToken;
+// Require SMS Multi-Factor Authentication
+if (decodedToken.firebase?.sign_in_second_factor !== 'phone') {
+  return null;
+}
+
+if (decodedToken.mfaEnrolled !== true) {
+  return null;
+}
+
+return decodedToken;
   } catch (error) {
     console.error("Firebase token verification failed:", error);
     return null;
   }
 }
 
-export { adminDb, adminAuth, verifyAuthToken };
+async function setMfaEnrolledClaim(uid: string) {
+  const userRecord = await adminAuth.getUser(uid);
+
+  const hasPhoneFactor =
+    userRecord.multiFactor?.enrolledFactors.some(
+      (factor) => factor.factorId === 'phone'
+    ) ?? false;
+
+  if (!userRecord.emailVerified || !hasPhoneFactor) {
+    throw new Error(
+      'Verified email and enrolled SMS factor are required.'
+    );
+  }
+
+  const existingClaims = userRecord.customClaims || {};
+
+  await adminAuth.setCustomUserClaims(uid, {
+    ...existingClaims,
+    mfaEnrolled: true,
+  });
+}
+export {
+  adminDb,
+  adminAuth,
+  verifyAuthToken,
+  setMfaEnrolledClaim,
+};
